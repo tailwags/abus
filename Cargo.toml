@@ -1,6 +1,20 @@
 [package]
 name = "abus"
-version = "0.1.0"
+version = "0.0.1"
 edition = "2024"
+license = "Apache-2.0"
+description = "Dbus implementation"
+authors = ["Matilde Morrone <contact@morrone.dev>"]
+repository = "https://github.com/tailwags/abus"
+include = ["src/**/*.rs", "README.md", "LICENSE"]
+
 
 [dependencies]
+bytes = "1.11.0"
+serde_core = "1.0.228"
+tokio = "1.49.0"
+
+[dev-dependencies]
+anyhow = "1.0.100"
+serde = { version = "1.0.228", features = ["derive"] }
+tokio = { version = "1.49.0", features = ["full"] }
