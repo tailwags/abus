@@ -1,6 +1,7 @@
 use std::{
     collections::VecDeque,
-    io::{self, IoSlice, IoSliceMut},
+    fmt::Display,
+    io::{IoSlice, IoSliceMut},
     mem::MaybeUninit,
     os::{
         fd::{AsFd, BorrowedFd, OwnedFd},
@@ -10,27 +11,169 @@ use std::{
     task::{Context, Poll, ready},
 };
 
-use rustix::net::{
-    RecvAncillaryBuffer, RecvAncillaryMessage, RecvFlags, SendAncillaryBuffer,
-    SendAncillaryMessage, SendFlags, recvmsg, sendmsg,
+use rustix::{
+    net::{
+        RecvAncillaryBuffer, RecvAncillaryMessage, RecvFlags, SendAncillaryBuffer,
+        SendAncillaryMessage, SendFlags, recvmsg, sendmsg,
+    },
+    process::getuid,
 };
-use tokio::io::{AsyncRead, AsyncWrite, ReadBuf, unix::AsyncFd};
+use tokio::io::{
+    self, AsyncBufReadExt as _, AsyncRead, AsyncWrite, AsyncWriteExt as _, BufReader, ReadBuf,
+    unix::AsyncFd,
+};
+use tracing::{error, info};
+
+use crate::utils::HexU32;
 
 const MAX_FDS_PER_MSG: usize = 253;
 
+enum State {
+    #[allow(unused)]
+    WaitingForData,
+    WaitingForOK,
+    WaitingForReject,
+    WaitingForAgreeUnixFD,
+}
+
+impl Display for State {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::WaitingForData => f.write_str("WaitingForData"),
+            Self::WaitingForOK => f.write_str("WaitingForOK"),
+            Self::WaitingForReject => f.write_str("WaitingForReject"),
+            Self::WaitingForAgreeUnixFD => f.write_str("WaitingForAgreeUnixFD"),
+        }
+    }
+}
+
 pub struct Connection {
+    stream: BufReader<StreamWrapper>,
+}
+
+impl Connection {
+    pub async fn new() -> io::Result<Self> {
+        let stream = tokio::net::UnixStream::connect("/run/dbus/system_bus_socket").await?;
+
+        info!("Connected to dbus system socket");
+
+        let stream = StreamWrapper::authenticate(stream.into_std()?).await?;
+
+        Ok(Self { stream })
+    }
+
+    pub fn server_guid(&self) -> &str {
+        &self.stream.get_ref().server_guid
+    }
+}
+
+struct StreamWrapper {
     stream: AsyncFd<UnixStream>,
+    server_guid: String,
+    unix_fd_passing: bool,
     pub decode_fds: VecDeque<OwnedFd>,
     pub encode_fds: VecDeque<OwnedFd>,
 }
 
-impl Connection {
-    pub fn new(stream: UnixStream) -> io::Result<Self> {
-        Ok(Self {
+impl StreamWrapper {
+    pub async fn authenticate(stream: UnixStream) -> io::Result<BufReader<Self>> {
+        let this = Self {
             stream: AsyncFd::new(stream)?,
+            server_guid: String::new(),
+            unix_fd_passing: false,
             decode_fds: VecDeque::new(),
             encode_fds: VecDeque::new(),
-        })
+        };
+
+        this._authenticate().await
+    }
+
+    async fn _authenticate(self) -> io::Result<BufReader<Self>> {
+        let mut stream = BufReader::new(self);
+
+        let uid = HexU32::new(getuid().as_raw());
+
+        stream.write_all(b"\0").await?;
+
+        stream
+            .write_all(format!("AUTH EXTERNAL {uid}\r\n").as_bytes())
+            .await?;
+
+        let mut state = State::WaitingForOK;
+
+        let mut line_buffer = String::new();
+
+        loop {
+            stream.read_line(&mut line_buffer).await?;
+            let line = line_buffer.trim_end();
+
+            let (cmd, arg) = line.split_once(' ').unwrap_or((line, ""));
+
+            state = match (&state, cmd) {
+                (
+                    State::WaitingForData | State::WaitingForOK | State::WaitingForReject,
+                    "REJECTED",
+                ) => {
+                    // We would try other auth methods here if we had any
+                    // bail!("Auth rejected, available: {arg}")
+                    todo!("Auth rejected, available: {arg}")
+                }
+
+                (State::WaitingForData | State::WaitingForOK, "ERROR")
+                | (State::WaitingForOK, "DATA") => {
+                    stream.write_all(b"CANCEL\r\n").await?;
+                    State::WaitingForReject
+                }
+
+                (State::WaitingForData | State::WaitingForOK, "OK") => {
+                    stream.get_mut().server_guid = arg.to_string();
+                    stream.write_all(b"NEGOTIATE_UNIX_FD\r\n").await?;
+
+                    State::WaitingForAgreeUnixFD
+                }
+
+                (State::WaitingForData, "DATA") => {
+                    /*
+                    The only mechanism we implement (EXTERNAL) never enters WaitingForData,
+                    since it always produces an initial response that the server accepts
+                    immediately with OK. If we somehow get here, we have no mechanism
+                    capable of processing a server challenge.
+                    */
+                    stream
+                        .write_all(b"ERROR no mechanism to process challenge\r\n")
+                        .await?;
+
+                    state
+                }
+
+                (State::WaitingForAgreeUnixFD, "AGREE_UNIX_FD") => {
+                    stream.get_mut().unix_fd_passing = true;
+                    stream.write_all(b"BEGIN\r\n").await?;
+                    break;
+                }
+                (State::WaitingForAgreeUnixFD, "ERROR") => {
+                    stream.get_mut().unix_fd_passing = false;
+                    stream.write_all(b"BEGIN\r\n").await?;
+                    break;
+                }
+
+                // Invalid states
+                (State::WaitingForData | State::WaitingForOK, _) => {
+                    stream.write_all(b"ERROR\r\n").await?;
+
+                    state
+                }
+                (State::WaitingForReject | State::WaitingForAgreeUnixFD, _) => {
+                    error!("Received invalid data during state {state}");
+                    // bail!("Closing stream")
+                    todo!("Closing stream")
+                }
+            };
+
+            line_buffer.clear();
+        }
+
+        Ok(stream)
     }
 
     fn poll_write_impl(
@@ -81,7 +224,7 @@ impl Connection {
     }
 }
 
-impl AsyncRead for Connection {
+impl AsyncRead for StreamWrapper {
     fn poll_read(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
@@ -128,7 +271,7 @@ impl AsyncRead for Connection {
     }
 }
 
-impl AsyncWrite for Connection {
+impl AsyncWrite for StreamWrapper {
     fn poll_write(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
