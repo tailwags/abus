@@ -1,31 +1,39 @@
 use std::fmt::{Debug, Display};
 
-const HEX_ALPHABET: &[u8; 16] = b"0123456789abcdef";
+#[inline]
+fn hex_encode(src: &[u8], dst: &mut [u8]) {
+    const HEX_ALPHABET: &[u8; 16] = b"0123456789abcdef";
+
+    for (i, &b) in src.iter().enumerate() {
+        dst[i * 2] = HEX_ALPHABET[(b >> 4) as usize];
+        dst[i * 2 + 1] = HEX_ALPHABET[(b & 0xf) as usize];
+    }
+}
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Hash)]
-#[repr(transparent)]
-pub struct HexU32([u8; 8]);
+pub struct HexU32 {
+    buf: [u8; 20],
+    len: u8,
+}
 
 impl HexU32 {
-    #[inline]
-    pub const fn new(val: u32) -> Self {
-        let b = val.to_be_bytes();
-        Self([
-            HEX_ALPHABET[(b[0] >> 4) as usize],
-            HEX_ALPHABET[(b[0] & 0xf) as usize],
-            HEX_ALPHABET[(b[1] >> 4) as usize],
-            HEX_ALPHABET[(b[1] & 0xf) as usize],
-            HEX_ALPHABET[(b[2] >> 4) as usize],
-            HEX_ALPHABET[(b[2] & 0xf) as usize],
-            HEX_ALPHABET[(b[3] >> 4) as usize],
-            HEX_ALPHABET[(b[3] & 0xf) as usize],
-        ])
+    pub fn new(val: u32) -> Self {
+        let mut itoa_buf = itoa::Buffer::new();
+        let dec = itoa_buf.format(val).as_bytes();
+
+        let mut buf = [0u8; 20];
+        hex_encode(dec, &mut buf);
+
+        Self {
+            buf,
+            len: (dec.len() * 2) as u8,
+        }
     }
 
     #[inline]
-    pub const fn as_str(&self) -> &str {
+    pub fn as_str(&self) -> &str {
         // SAFETY: constructed exclusively from HEX_ALPHABET, always valid ASCII
-        unsafe { std::str::from_utf8_unchecked(&self.0) }
+        unsafe { std::str::from_utf8_unchecked(&self.buf[..self.len as usize]) }
     }
 }
 
@@ -52,15 +60,10 @@ impl Uuid {
         let mut bytes = [0u8; 16];
         getrandom::fill(&mut bytes)?;
 
-        let mut uuid = [0u8; 32];
+        let mut inner = [0u8; 32];
+        hex_encode(&bytes, &mut inner);
 
-        for (i, byte) in bytes.iter().enumerate() {
-            let idx = i * 2;
-            uuid[idx] = HEX_ALPHABET[(byte >> 4) as usize];
-            uuid[idx + 1] = HEX_ALPHABET[(byte & 0x0F) as usize];
-        }
-
-        Ok(Self { inner: uuid })
+        Ok(Self { inner })
     }
 
     #[inline]
