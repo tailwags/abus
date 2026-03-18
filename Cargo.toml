@@ -12,7 +12,6 @@ include = ["src/**/*.rs", "README.md", "LICENSE"]
 [dependencies]
 bytes = "1.11.1"
 getrandom = "0.4.2"
-hex = "0.4.3"
 rustix = { version = "1.1.4", features = ["net", "process"] }
 serde_core = "1.0.228"
 tokio = { version = "1.50.0", features = ["net", "io-util"] }
