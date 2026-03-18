@@ -1,5 +1,6 @@
 use std::fmt::{Debug, Display};
 
+#[derive(PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(transparent)]
 pub struct Uuid {
     inner: [u8; 32],
