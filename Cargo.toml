@@ -8,15 +8,19 @@ authors = ["Matilde Morrone <contact@morrone.dev>"]
 repository = "https://github.com/tailwags/abus"
 include = ["src/**/*.rs", "README.md", "LICENSE"]
 
+[features]
+tracing = ["dep:tracing"]
 
 [dependencies]
 bytes = "1.11.1"
 getrandom = "0.4.2"
-itoa = "1.0.17"
+itoa = "1.0.18"
 rustix = { version = "1.1.4", features = ["net", "process"] }
 serde_core = "1.0.228"
 tokio = { version = "1.50.0", features = ["net", "io-util"] }
-tracing = "0.1.44"
+tokio-stream = { version = "0.1.18", default-features = false }
+tokio-util = { version = "0.7.18", features = ["codec"] }
+tracing = { version = "0.1.44", optional = true }
 
 [dev-dependencies]
 anyhow = "1.0.102"

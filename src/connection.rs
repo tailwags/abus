@@ -22,7 +22,7 @@ use tokio::io::{
     self, AsyncBufReadExt as _, AsyncRead, AsyncWrite, AsyncWriteExt as _, BufReader, ReadBuf,
     unix::AsyncFd,
 };
-use tracing::{error, info};
+use crate::tracing::{error, info};
 
 use crate::utils::HexU32;
 
