@@ -20,11 +20,13 @@ default-feature trees for both:
 
 ```
 abus v0.0.1
+├── bitflags v2.11.0
 ├── bytes v1.11.1
 ├── getrandom v0.4.2
 │   ├── cfg-if v1.0.4
 │   └── libc v0.2.183
-├── itoa v1.0.17
+├── itoa v1.0.18
+├── pin-project-lite v0.2.17
 ├── rustix v1.1.4
 │   ├── bitflags v2.11.0
 │   └── linux-raw-sys v0.12.1
@@ -37,19 +39,16 @@ abus v0.0.1
 │   ├── pin-project-lite v0.2.17
 │   └── socket2 v0.6.3
 │       └── libc v0.2.183
-└── tracing v0.1.44
+├── tokio-stream v0.1.18
+│   ├── futures-core v0.3.32
+│   ├── pin-project-lite v0.2.17
+│   └── tokio v1.50.0 (*)
+└── tokio-util v0.7.18
+    ├── bytes v1.11.1
+    ├── futures-core v0.3.32
+    ├── futures-sink v0.3.32
     ├── pin-project-lite v0.2.17
-    ├── tracing-attributes v0.1.31 (proc-macro)
-    │   ├── proc-macro2 v1.0.106
-    │   │   └── unicode-ident v1.0.24
-    │   ├── quote v1.0.45
-    │   │   └── proc-macro2 v1.0.106 (*)
-    │   └── syn v2.0.117
-    │       ├── proc-macro2 v1.0.106 (*)
-    │       ├── quote v1.0.45 (*)
-    │       └── unicode-ident v1.0.24
-    └── tracing-core v0.1.36
-        └── once_cell v1.21.4
+    └── tokio v1.50.0 (*)
 ```
 
 </details>
