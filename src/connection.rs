@@ -67,7 +67,7 @@ impl Connection {
 
         let mut state = State::WaitingForOK;
         let mut server_guid = String::new();
-        let mut unix_fd_passing = false;
+        let unix_fd_passing;
 
         let mut line_buffer = String::new();
 
