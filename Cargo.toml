@@ -12,10 +12,16 @@ include = ["src/**/*.rs", "README.md", "LICENSE"]
 tracing = ["dep:tracing"]
 
 [dependencies]
+anchovy = "0.1.0"
+bitflags = "2.11.0"
 bytes = "1.11.1"
+futures-util = { version = "0.3.32", default-features = false, features = [
+  "sink",
+] }
 getrandom = "0.4.2"
 itoa = "1.0.18"
-rustix = { version = "1.1.4", features = ["net", "process"] }
+pin-project-lite = "0.2.17"
+rustix = { version = "1.1.4", features = ["process"] }
 serde_core = "1.0.228"
 tokio = { version = "1.50.0", features = ["net", "io-util"] }
 tokio-stream = { version = "0.1.18", default-features = false }
@@ -28,3 +34,7 @@ serde = { version = "1.0.228", features = ["derive"] }
 tokio = { version = "1.50.0", features = ["macros", "rt-multi-thread"] }
 tracing = "0.1.44"
 tracing-subscriber = "0.3.23"
+
+[patch.crates-io]
+# anchovy = { path = "../anchovy" }
+anchovy = { git = "https://github.com/tailwags/anchovy" }
