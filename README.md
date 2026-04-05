@@ -4,8 +4,8 @@ A D-Bus implementation in Rust, built specifically for Tokio.
 
 Most of the existing Rust D-Bus work supports multiple async runtimes. That
 flexibility is useful if you need it, but the cost is real: a larger dependency
-surface, extra abstraction layers, and a library that doesn't quite fit anywhere.
-abus skips all of that. Tokio only, nothing else.
+surface, extra abstraction layers, and a library that doesn't quite fit
+anywhere. abus skips all of that. Tokio only, nothing else.
 
 > **Note:** abus is under active development. The roadmap below describes what
 > this project is working toward, not what is necessarily implemented today.
@@ -54,3 +54,8 @@ software can opt into something better. This is experimental and a long way off.
 This project is licensed under the
 [Apache-2.0 License](http://www.apache.org/licenses/LICENSE-2.0). For more
 information, please see the [LICENSE](LICENSE) file.
+
+`docs/dbus-specification.md` is derived from the
+[D-Bus Specification](https://gitlab.freedesktop.org/dbus/dbus/-/blob/master/doc/dbus-specification.xml),
+copyright the D-Bus contributors, licensed under GPL-2.0-or-later. See
+[docs/COPYING](docs/COPYING).
