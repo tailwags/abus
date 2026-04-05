@@ -185,14 +185,14 @@ impl Message {
             .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "invalid message type"))?;
         let flags = Flags::from_bits_retain(src.get_u8());
         let version = src.get_u8();
-        let body_length = src.get_u32_le();
-        let serial = NonZero::new(src.get_u32_le()).ok_or_else(|| {
+        let body_length = endianness.get_u32(src);
+        let serial = NonZero::new(endianness.get_u32(src)).ok_or_else(|| {
             io::Error::new(
                 io::ErrorKind::InvalidData,
                 "message serial must not be zero",
             )
         })?;
-        let array_len = src.get_u32_le() as usize;
+        let array_len = endianness.get_u32(src) as usize;
         let header_size = (16 + array_len + 7) & !7;
 
         let mut pos = 16usize;
@@ -223,7 +223,7 @@ impl Message {
                 HeaderField::Path => {
                     read_variant_sig(src, b'o')?;
                     pos += 3;
-                    let s = read_string(src)?;
+                    let s = read_string(src, endianness)?;
                     pos += 4 + s.len() + 1;
                     path = Some(ObjectPath { inner: s });
                 }
@@ -236,7 +236,7 @@ impl Message {
                 | HeaderField::Sender) => {
                     read_variant_sig(src, b's')?;
                     pos += 3;
-                    let s = read_string(src)?;
+                    let s = read_string(src, endianness)?;
                     pos += 4 + s.len() + 1;
                     match field {
                         HeaderField::Interface => interface = Some(s),
@@ -261,7 +261,7 @@ impl Message {
                 field @ (HeaderField::ReplySerial | HeaderField::UnixFds) => {
                     read_variant_sig(src, b'u')?;
                     pos += 3;
-                    let val = src.get_u32_le();
+                    let val = endianness.get_u32(src);
                     pos += 4;
                     match field {
                         HeaderField::ReplySerial => reply_serial = Some(val),
@@ -302,14 +302,6 @@ impl Message {
     pub(crate) fn encode(self, dst: &mut BytesMut) -> io::Result<()> {
         let Message { header, body } = self;
 
-        // FIXME: abstract away endianess instead of erroring out
-        if header.endianness != Endianness::LittleEndian {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                "Unsupported endianess",
-            ));
-        }
-
         let Header {
             endianness,
             message_type,
@@ -332,8 +324,8 @@ impl Message {
         dst.put_u8(message_type.into());
         dst.put_u8(flags.bits());
         dst.put_u8(version);
-        dst.put_u32_le(body.len() as u32);
-        dst.put_u32_le(serial.get());
+        endianness.put_u32(dst, body.len() as u32);
+        endianness.put_u32(dst, serial.get());
 
         /*
         The header is up to this point of known size. Next byte will be written at offset 12.
@@ -348,46 +340,52 @@ impl Message {
         In pratice we can just put in the u32 for the array len but it's worth nothing why this "just works"
         */
 
-        dst.put_u32_le(0);
+        endianness.put_u32(dst, 0);
 
         if let Some(ObjectPath { inner: path }) = path {
-            encode_str_field(dst, HeaderField::Path, b'o', &path);
+            encode_str_field(dst, HeaderField::Path, b'o', &path, endianness);
         }
 
         if let Some(interface) = interface {
-            encode_str_field(dst, HeaderField::Interface, b's', &interface);
+            encode_str_field(dst, HeaderField::Interface, b's', &interface, endianness);
         }
 
         if let Some(member) = member {
-            encode_str_field(dst, HeaderField::Member, b's', &member);
+            encode_str_field(dst, HeaderField::Member, b's', &member, endianness);
         }
 
         if let Some(error_name) = error_name {
-            encode_str_field(dst, HeaderField::ErrorName, b's', &error_name);
+            encode_str_field(dst, HeaderField::ErrorName, b's', &error_name, endianness);
         }
 
         if let Some(reply_serial) = reply_serial {
-            encode_u32_field(dst, HeaderField::ReplySerial, reply_serial);
+            encode_u32_field(dst, HeaderField::ReplySerial, reply_serial, endianness);
         }
 
         if let Some(destination) = destination {
-            encode_str_field(dst, HeaderField::Destination, b's', &destination);
+            encode_str_field(
+                dst,
+                HeaderField::Destination,
+                b's',
+                &destination,
+                endianness,
+            );
         }
 
         if let Some(sender) = sender {
-            encode_str_field(dst, HeaderField::Sender, b's', &sender);
+            encode_str_field(dst, HeaderField::Sender, b's', &sender, endianness);
         }
 
         if let Some(signature) = signature {
-            encode_str_field(dst, HeaderField::Signature, b'g', &signature);
+            encode_str_field(dst, HeaderField::Signature, b'g', &signature, endianness);
         }
 
         if let Some(unix_fds) = unix_fds {
-            encode_u32_field(dst, HeaderField::UnixFds, unix_fds.get());
+            encode_u32_field(dst, HeaderField::UnixFds, unix_fds.get(), endianness);
         }
 
         let array_len = (dst.len() - 16) as u32;
-        dst[12..16].copy_from_slice(&array_len.to_le_bytes());
+        dst[12..16].copy_from_slice(&endianness.u32_to_bytes(array_len));
 
         // From the spec: "The length of the header must be a multiple of 8, allowing the body to begin on an 8-byte boundary when storing the entire message in a single buffer."
         align_to(dst, 8);
@@ -423,8 +421,8 @@ fn read_variant_sig(src: &mut BytesMut, expected_sig: u8) -> io::Result<()> {
 
 /// Reads a u32-length-prefixed string followed by a null terminator.
 /// Used for D-Bus types `s` (STRING) and `o` (OBJECT_PATH).
-fn read_string(src: &mut BytesMut) -> io::Result<String> {
-    let len = src.get_u32_le() as usize;
+fn read_string(src: &mut BytesMut, endianness: Endianness) -> io::Result<String> {
+    let len = endianness.get_u32(src) as usize;
     let bytes = src.copy_to_bytes(len);
     if src.get_u8() != 0 {
         return Err(io::Error::new(
@@ -466,7 +464,13 @@ fn align_to(dst: &mut BytesMut, align: usize) {
 /// Encodes a string-like header field (types `'s'`, `'o'`, or `'g'`) into `dst`.
 /// Path uses sig `b'o'`, signature field uses `b'g'` with a u8 length prefix;
 /// all other string fields use `b's'`.
-fn encode_str_field(dst: &mut BytesMut, field: HeaderField, sig: u8, s: &str) {
+fn encode_str_field(
+    dst: &mut BytesMut,
+    field: HeaderField,
+    sig: u8,
+    s: &str,
+    endianness: Endianness,
+) {
     align_to(dst, 8);
     dst.put_u8(field as u8);
     dst.put_u8(1); // signature len
@@ -475,18 +479,18 @@ fn encode_str_field(dst: &mut BytesMut, field: HeaderField, sig: u8, s: &str) {
     if sig == b'g' {
         dst.put_u8(s.len() as u8);
     } else {
-        dst.put_u32_le(s.len() as u32);
+        endianness.put_u32(dst, s.len() as u32);
     }
     dst.extend_from_slice(s.as_bytes());
     dst.put_u8(0); // null byte to end string
 }
 
 /// Encodes a u32 header field (type `'u'`) into `dst`.
-fn encode_u32_field(dst: &mut BytesMut, field: HeaderField, val: u32) {
+fn encode_u32_field(dst: &mut BytesMut, field: HeaderField, val: u32, endianness: Endianness) {
     align_to(dst, 8);
     dst.put_u8(field as u8);
     dst.put_u8(1); // signature len
     dst.put_u8(b'u');
     dst.put_u8(0); // null byte to end signature
-    dst.put_u32_le(val);
+    endianness.put_u32(dst, val);
 }

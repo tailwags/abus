@@ -25,16 +25,12 @@ impl Decoder for MessageCodec {
             return Ok(None);
         }
 
-        if !matches!(src[0].try_into(), Ok(Endianness::LittleEndian)) {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                "Unsupported endianness",
-            ));
-        }
+        let endianness = Endianness::try_from(src[0])
+            .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "invalid endianness byte"))?;
 
         // Both slices are within the 16-byte minimum guaranteed above.
-        let body_length = u32::from_le_bytes([src[4], src[5], src[6], src[7]]);
-        let array_len = u32::from_le_bytes([src[12], src[13], src[14], src[15]]) as usize;
+        let body_length = endianness.u32_from_bytes([src[4], src[5], src[6], src[7]]);
+        let array_len = endianness.u32_from_bytes([src[12], src[13], src[14], src[15]]) as usize;
 
         // 16 fixed header bytes + the array len + padding byte to next multiple of 8
         let header_size = (16 + array_len + 7) & !7;
