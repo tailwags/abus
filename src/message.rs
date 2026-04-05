@@ -424,15 +424,15 @@ fn read_variant_sig(src: &mut BytesMut, expected_sig: u8) -> io::Result<()> {
 fn read_string(src: &mut BytesMut, endianness: Endianness) -> io::Result<String> {
     let len = endianness.get_u32(src) as usize;
     let bytes = src.copy_to_bytes(len);
+
     if src.get_u8() != 0 {
         return Err(io::Error::new(
             io::ErrorKind::InvalidData,
             "expected null terminator after string",
         ));
     }
-    std::str::from_utf8(&bytes)
-        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
-        .map(str::to_owned)
+
+    String::from_utf8(bytes.to_vec()).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
 }
 
 /// Reads a u8-length-prefixed string followed by a null terminator.
@@ -440,15 +440,15 @@ fn read_string(src: &mut BytesMut, endianness: Endianness) -> io::Result<String>
 fn read_sig_string(src: &mut BytesMut) -> io::Result<String> {
     let len = src.get_u8() as usize;
     let bytes = src.copy_to_bytes(len);
+
     if src.get_u8() != 0 {
         return Err(io::Error::new(
             io::ErrorKind::InvalidData,
             "expected null terminator after string",
         ));
     }
-    std::str::from_utf8(&bytes)
-        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
-        .map(str::to_owned)
+
+    String::from_utf8(bytes.to_vec()).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
 }
 
 /// Appends nul bytes to `dst` until its length is a multiple of `align`.
