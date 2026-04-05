@@ -8,6 +8,11 @@ authors = ["Matilde Morrone <contact@morrone.dev>"]
 repository = "https://github.com/tailwags/abus"
 include = ["src/**/*.rs", "README.md", "LICENSE"]
 
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true
+
 [features]
 tracing = ["dep:tracing"]
 
