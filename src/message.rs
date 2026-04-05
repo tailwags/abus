@@ -225,7 +225,9 @@ impl Message {
                     pos += 3;
                     let s = read_string(src, endianness)?;
                     pos += 4 + s.len() + 1;
-                    path = Some(ObjectPath { inner: s });
+                    path = ObjectPath::new(s)
+                        .map(Some)
+                        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?
                 }
 
                 // All string fields have the same wire shape, just different codes.
@@ -342,8 +344,8 @@ impl Message {
 
         endianness.put_u32(dst, 0);
 
-        if let Some(ObjectPath { inner: path }) = path {
-            encode_str_field(dst, HeaderField::Path, b'o', &path, endianness);
+        if let Some(path) = path {
+            encode_str_field(dst, HeaderField::Path, b'o', path.as_str(), endianness);
         }
 
         if let Some(interface) = interface {
