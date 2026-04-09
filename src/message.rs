@@ -174,7 +174,7 @@ impl TryFrom<u8> for HeaderField {
 }
 
 impl Message {
-    pub(crate) fn decode(src: &mut BytesMut) -> io::Result<Self> {
+    pub fn decode(src: &mut BytesMut) -> io::Result<Self> {
         let endianness: Endianness = src
             .get_u8()
             .try_into()

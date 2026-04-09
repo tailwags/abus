@@ -1,3 +1,6 @@
+[workspace]
+exclude = ["fuzz"]
+
 [package]
 name = "abus"
 version = "0.0.2"
