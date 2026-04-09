@@ -174,7 +174,40 @@ impl TryFrom<u8> for HeaderField {
 }
 
 impl Message {
+    /// Peeks at `src` to determine the total byte length of the next complete message frame.
+    ///
+    /// Returns `Ok(None)` if fewer than 16 bytes are available (need more data),
+    /// `Err` for detectably invalid content (bad endianness byte, frame exceeds 128 MiB),
+    /// or `Ok(Some(n))` with the total frame size.
+    pub(crate) fn peek_frame_size(src: &[u8]) -> io::Result<Option<usize>> {
+        if src.len() < 16 {
+            return Ok(None);
+        }
+        let endianness = Endianness::try_from(src[0])
+            .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "invalid endianness byte"))?;
+        let body_length = endianness.u32_from_bytes([src[4], src[5], src[6], src[7]]) as usize;
+        let array_len = endianness.u32_from_bytes([src[12], src[13], src[14], src[15]]) as usize;
+        let header_size = (16 + array_len + 7) & !7;
+        let total_size = header_size + body_length;
+        if total_size > 134_217_728 {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "message exceeds 128 MiB limit",
+            ));
+        }
+        Ok(Some(total_size))
+    }
+
     pub fn decode(src: &mut BytesMut) -> io::Result<Self> {
+        let total_size = Message::peek_frame_size(src)?
+            .ok_or_else(|| io::Error::new(io::ErrorKind::UnexpectedEof, "incomplete header"))?;
+        if src.len() < total_size {
+            return Err(io::Error::new(
+                io::ErrorKind::UnexpectedEof,
+                "incomplete message",
+            ));
+        }
+
         let endianness: Endianness = src
             .get_u8()
             .try_into()
@@ -400,6 +433,12 @@ impl Message {
 
 /// Reads and validates the 3-byte variant type header: sig_len=1, `expected_sig`, null terminator.
 fn read_variant_sig(src: &mut BytesMut, expected_sig: u8) -> io::Result<()> {
+    if src.remaining() < 3 {
+        return Err(io::Error::new(
+            io::ErrorKind::UnexpectedEof,
+            "truncated variant signature",
+        ));
+    }
     if src.get_u8() != 1 {
         return Err(io::Error::new(
             io::ErrorKind::InvalidData,
@@ -424,7 +463,19 @@ fn read_variant_sig(src: &mut BytesMut, expected_sig: u8) -> io::Result<()> {
 /// Reads a u32-length-prefixed string followed by a null terminator.
 /// Used for D-Bus types `s` (STRING) and `o` (OBJECT_PATH).
 fn read_string(src: &mut BytesMut, endianness: Endianness) -> io::Result<String> {
+    if src.remaining() < 4 {
+        return Err(io::Error::new(
+            io::ErrorKind::UnexpectedEof,
+            "truncated string length",
+        ));
+    }
     let len = endianness.get_u32(src) as usize;
+    if src.remaining() < len + 1 {
+        return Err(io::Error::new(
+            io::ErrorKind::UnexpectedEof,
+            "truncated string body",
+        ));
+    }
     let bytes = src.copy_to_bytes(len);
 
     if src.get_u8() != 0 {
@@ -440,7 +491,19 @@ fn read_string(src: &mut BytesMut, endianness: Endianness) -> io::Result<String>
 /// Reads a u8-length-prefixed string followed by a null terminator.
 /// Used for D-Bus type `g` (SIGNATURE).
 fn read_sig_string(src: &mut BytesMut) -> io::Result<String> {
+    if src.remaining() < 1 {
+        return Err(io::Error::new(
+            io::ErrorKind::UnexpectedEof,
+            "truncated signature length",
+        ));
+    }
     let len = src.get_u8() as usize;
+    if src.remaining() < len + 1 {
+        return Err(io::Error::new(
+            io::ErrorKind::UnexpectedEof,
+            "truncated signature body",
+        ));
+    }
     let bytes = src.copy_to_bytes(len);
 
     if src.get_u8() != 0 {

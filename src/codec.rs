@@ -3,7 +3,7 @@ use std::io;
 use bytes::BytesMut;
 use tokio_util::codec::{Decoder, Encoder};
 
-use crate::{Endianness, Message};
+use crate::Message;
 
 #[derive(Debug)]
 pub struct MessageCodec {}
@@ -20,34 +20,13 @@ impl Decoder for MessageCodec {
     type Error = io::Error;
 
     fn decode(&mut self, src: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
-        if src.len() < 16 {
-            src.reserve(16);
-            return Ok(None);
-        }
-
-        let endianness = Endianness::try_from(src[0])
-            .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "invalid endianness byte"))?;
-
-        // Both slices are within the 16-byte minimum guaranteed above.
-        let body_length = endianness.u32_from_bytes([src[4], src[5], src[6], src[7]]);
-        let array_len = endianness.u32_from_bytes([src[12], src[13], src[14], src[15]]) as usize;
-
-        // 16 fixed header bytes + the array len + padding byte to next multiple of 8
-        let header_size = (16 + array_len + 7) & !7;
-        let total_size = header_size + body_length as usize;
-
-        /*
-        From the spec:
-
-        The maximum length of a message, including header, header alignment padding, and body is 2 to the 27th power or 134217728 (128 MiB).
-        Implementations must not send or accept messages exceeding this size.
-        */
-        if total_size > 134_217_728 {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                "Message exceeds 128 MiB limit",
-            ));
-        }
+        let total_size = match Message::peek_frame_size(src)? {
+            None => {
+                src.reserve(16);
+                return Ok(None);
+            }
+            Some(n) => n,
+        };
 
         // Make sure we have the whole body
         if src.len() < total_size {
