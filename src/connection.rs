@@ -5,7 +5,7 @@ use std::{
 };
 
 use crate::tracing::{error, info};
-use anchovy::AnchovyStream;
+use anchovy::{AnchovyStream, DBUS_SCM_RIGHTS};
 use pin_project_lite::pin_project;
 use rustix::process::getuid;
 use tokio::{
@@ -39,7 +39,7 @@ impl Display for State {
 pin_project! {
     pub struct Connection {
         #[pin]
-        stream: BufReader<AnchovyStream>,
+        stream: BufReader<AnchovyStream<DBUS_SCM_RIGHTS>>,
         server_guid: String,
         unix_fd_passing: bool,
     }

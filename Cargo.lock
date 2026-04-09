@@ -26,8 +26,9 @@ dependencies = [
 
 [[package]]
 name = "anchovy"
-version = "0.1.0"
-source = "git+https://github.com/tailwags/anchovy#9787de31ddc1b07e6fbed8d033b1ffd1cbb09534"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1827426e76373cafeb2654f18f9e714c8f9c8cc8276560ae1266a7329b08be3b"
 dependencies = [
  "rustix",
  "tokio",
@@ -378,9 +379,9 @@ dependencies = [
 
 [[package]]
 name = "tokio"
-version = "1.51.0"
+version = "1.51.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2bd1c4c0fc4a7ab90fc15ef6daaa3ec3b893f004f915f2392557ed23237820cd"
+checksum = "f66bf9585cda4b724d3e78ab34b73fb2bbaba9011b9bfdf69dc836382ea13b8c"
 dependencies = [
  "bytes",
  "libc",
