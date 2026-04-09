@@ -244,6 +244,10 @@ impl Message {
         while pos < array_end {
             // Each field is STRUCT(BYTE, VARIANT), structs align to 8.
             let pad = (8 - pos % 8) % 8;
+            if pos + pad >= array_end {
+                // Only trailing padding remains; no complete field fits.
+                break;
+            }
             src.advance(pad);
             pos += pad;
 
@@ -279,7 +283,8 @@ impl Message {
                         HeaderField::ErrorName => error_name = Some(s),
                         HeaderField::Destination => destination = Some(s),
                         HeaderField::Sender => sender = Some(s),
-                        _ => unreachable!(),
+                        // SAFETY: outer `field @` arm already constrains field to the five variants above
+                        _ => unsafe { std::hint::unreachable_unchecked() },
                     }
                 }
 
@@ -301,14 +306,24 @@ impl Message {
                     match field {
                         HeaderField::ReplySerial => reply_serial = Some(val),
                         HeaderField::UnixFds => unix_fds = NonZero::new(val),
-                        _ => unreachable!(),
+                        // SAFETY: outer `field @` arm already constrains field to ReplySerial and UnixFds
+                        _ => unsafe { std::hint::unreachable_unchecked() },
                     }
                 }
             }
         }
 
+        if pos > array_end {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "header field extends past array boundary",
+            ));
+        }
+
         // Spec: "The length of the header must be a multiple of 8." Advance past array tail padding.
-        src.advance(header_size - array_end);
+        // Use `header_size - pos` rather than `header_size - array_end` to handle the case where
+        // we broke out of the field loop early (trailing padding within the array).
+        src.advance(header_size - pos);
 
         let body = src.copy_to_bytes(body_length as usize);
 
