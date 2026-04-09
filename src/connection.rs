@@ -83,8 +83,10 @@ impl Connection {
                     "REJECTED",
                 ) => {
                     // We would try other auth methods here if we had any
-                    // bail!("Auth rejected, available: {arg}")
-                    todo!("Auth rejected, available: {arg}")
+                    return Err(io::Error::new(
+                        io::ErrorKind::PermissionDenied,
+                        format!("auth rejected, available methods: {arg}"),
+                    ));
                 }
 
                 (State::WaitingForData | State::WaitingForOK, "ERROR")
@@ -133,8 +135,10 @@ impl Connection {
                 }
                 (State::WaitingForReject | State::WaitingForAgreeUnixFD, _) => {
                     error!("Received invalid data during state {state}");
-                    // bail!("Closing stream")
-                    todo!("Closing stream")
+                    return Err(io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        format!("received invalid data during state {state}"),
+                    ));
                 }
             };
 
