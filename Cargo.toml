@@ -8,7 +8,7 @@ version = "0.0.2"
 edition = "2024"
 license = "Apache-2.0"
 description = "Dbus implementation"
-authors = ["Matilde Morrone <contact@morrone.dev>"]
+authors = ["Matilde Morrone <contact@matilde.pet>"]
 repository = "https://github.com/tailwags/abus"
 include = ["src/**/*.rs", "README.md", "LICENSE"]
 
