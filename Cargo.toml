@@ -4,14 +4,13 @@ exclude = ["fuzz"]
 resolver = "3"
 
 [workspace.package]
-version = "0.0.2"
 edition = "2024"
 license = "Apache-2.0"
 authors = ["Matilde Morrone <contact@matilde.pet>"]
 repository = "https://github.com/tailwags/abus"
 
 [workspace.dependencies]
-abus = { path = "crates/abus", version = "0.0.2" }
+abus = { path = "crates/abus", version = "0.0.3" }
 anchovy = "0.2.0"
 anyhow = "1.0.102"
 bitflags = "2.11.0"

@@ -1,6 +1,6 @@
 [package]
 name = "abus"
-version.workspace = true
+version = "0.0.3"
 edition.workspace = true
 description = "Dbus implementation"
 authors.workspace = true

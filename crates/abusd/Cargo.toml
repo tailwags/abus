@@ -1,6 +1,6 @@
 [package]
 name = "abusd"
-version = "0.1.0"
+version = "0.0.1"
 edition.workspace = true
 description = "D-Bus broker daemon"
 authors.workspace = true

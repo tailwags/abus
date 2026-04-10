@@ -1,6 +1,6 @@
 [package]
 name = "abusctl"
-version = "0.1.0"
+version = "0.0.1"
 edition.workspace = true
 description = "Command-line tool for inspecting and interacting with D-Bus"
 authors.workspace = true
