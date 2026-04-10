@@ -25,6 +25,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "abusctl"
+version = "0.1.0"
+
+[[package]]
+name = "abusd"
+version = "0.1.0"
+
+[[package]]
 name = "anchovy"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
