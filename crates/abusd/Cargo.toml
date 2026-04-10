@@ -1,0 +1,19 @@
+[package]
+name = "abusd"
+version = "0.1.0"
+edition.workspace = true
+description = "D-Bus broker daemon"
+authors.workspace = true
+repository.workspace = true
+readme = "README.md"
+include = ["src/**/*.rs", "README.md", "../../LICENSE"]
+
+[[bin]]
+name = "abusd"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "signal"] }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
