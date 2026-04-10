@@ -1,13 +1,11 @@
+// SPDX-License-Identifier: Apache-2.0
 use std::num::NonZero;
 
-use abus::{
-    Connection, Endianness, Flags, Header, Message, MessageCodec, MessageType, ObjectPath, Uuid,
-};
+use abus::{Connection, Endianness, Flags, Header, Message, MessageType, ObjectPath, Uuid};
 use anyhow::Result;
 use bytes::Bytes;
 use futures_util::SinkExt;
 use tokio_stream::StreamExt;
-use tokio_util::codec::Framed;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -17,11 +15,9 @@ async fn main() -> Result<()> {
 
     dbg!(uuid);
 
-    let connection = Connection::new().await?;
+    let mut connection = Connection::new().await?;
 
     println!("Connected to server {}", connection.server_guid());
-
-    let mut framed = Framed::new(connection, MessageCodec::new());
 
     let hello = Message {
         header: Header {
@@ -44,9 +40,9 @@ async fn main() -> Result<()> {
         body: Bytes::new(),
     };
 
-    framed.send(hello).await?;
+    connection.send(hello).await?;
 
-    while let Some(msg) = framed.try_next().await? {
+    while let Some(msg) = connection.try_next().await? {
         dbg!(msg);
     }
 

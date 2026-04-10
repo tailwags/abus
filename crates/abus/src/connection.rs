@@ -1,20 +1,20 @@
 // SPDX-License-Identifier: Apache-2.0
-use std::{
-    fmt::Display,
-    pin::Pin,
-    task::{Context, Poll},
-};
+use std::fmt::Display;
 
-use crate::tracing::{error, info};
+use crate::{
+    Message,
+    codec::MessageCodec,
+    tracing::{error, info},
+};
 use anchovy::{AnchovyStream, DBUS_SCM_RIGHTS};
+use futures_util::{Sink, Stream};
 use pin_project_lite::pin_project;
 use rustix::process::getuid;
 use tokio::{
-    io::{
-        self, AsyncBufReadExt as _, AsyncRead, AsyncWrite, AsyncWriteExt as _, BufReader, ReadBuf,
-    },
+    io::{self, AsyncBufReadExt as _, AsyncWriteExt as _, BufReader},
     net::UnixStream,
 };
+use tokio_util::codec::Framed;
 
 use crate::utils::HexU32;
 
@@ -40,7 +40,7 @@ impl Display for State {
 pin_project! {
     pub struct Connection {
         #[pin]
-        stream: BufReader<AnchovyStream<DBUS_SCM_RIGHTS>>,
+        stream: Framed<BufReader<AnchovyStream<DBUS_SCM_RIGHTS>>, MessageCodec>,
         server_guid: String,
         unix_fd_passing: bool,
     }
@@ -147,7 +147,7 @@ impl Connection {
         }
 
         Ok(Self {
-            stream,
+            stream: Framed::new(stream, MessageCodec::new()),
             server_guid,
             unix_fd_passing,
         })
@@ -162,30 +162,42 @@ impl Connection {
     }
 }
 
-impl AsyncRead for Connection {
-    fn poll_read(
-        self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-        buf: &mut ReadBuf<'_>,
-    ) -> Poll<std::io::Result<()>> {
-        self.project().stream.poll_read(cx, buf)
+impl Stream for Connection {
+    type Item = io::Result<Message>;
+
+    fn poll_next(
+        self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Option<Self::Item>> {
+        self.project().stream.poll_next(cx)
     }
 }
 
-impl AsyncWrite for Connection {
-    fn poll_write(
-        self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-        buf: &[u8],
-    ) -> Poll<std::io::Result<usize>> {
-        self.project().stream.poll_write(cx, buf)
+impl Sink<Message> for Connection {
+    type Error = io::Error;
+
+    fn poll_ready(
+        self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Result<(), Self::Error>> {
+        self.project().stream.poll_ready(cx)
     }
 
-    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+    fn start_send(self: std::pin::Pin<&mut Self>, msg: Message) -> Result<(), Self::Error> {
+        self.project().stream.start_send(msg)
+    }
+
+    fn poll_flush(
+        self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Result<(), Self::Error>> {
         self.project().stream.poll_flush(cx)
     }
 
-    fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
-        self.project().stream.poll_shutdown(cx)
+    fn poll_close(
+        self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Result<(), Self::Error>> {
+        self.project().stream.poll_close(cx)
     }
 }

@@ -1,15 +1,12 @@
 // SPDX-License-Identifier: EUPL-1.2
 use std::num::NonZero;
 
-use abus::{
-    Connection, Endianness, Flags, Header, Message, MessageCodec, MessageType, ObjectPath, Uuid,
-};
+use abus::{Connection, Endianness, Flags, Header, Message, MessageType, ObjectPath, Uuid};
 use anyhow::{Result, bail};
 use bytes::Bytes;
 use futures_util::SinkExt;
 use sap::{Argument, Parser};
 use tokio_stream::StreamExt;
-use tokio_util::codec::Framed;
 use tracing::info;
 
 const USAGE: &str = "\
@@ -65,10 +62,8 @@ async fn cmd_hello() -> Result<()> {
     let uuid = Uuid::new()?;
     info!(?uuid, "generated UUID");
 
-    let connection = Connection::new().await?;
+    let mut connection = Connection::new().await?;
     info!(server_guid = %connection.server_guid(), "connected");
-
-    let mut framed = Framed::new(connection, MessageCodec::new());
 
     let hello = Message {
         header: Header {
@@ -91,10 +86,10 @@ async fn cmd_hello() -> Result<()> {
         body: Bytes::new(),
     };
 
-    framed.send(hello).await?;
+    connection.send(hello).await?;
     info!("Hello sent, waiting for reply");
 
-    if let Some(msg) = framed.try_next().await? {
+    if let Some(msg) = connection.try_next().await? {
         info!(?msg, "received message");
         // break;
     }

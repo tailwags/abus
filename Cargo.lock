@@ -35,7 +35,6 @@ dependencies = [
  "sap",
  "tokio",
  "tokio-stream",
- "tokio-util",
  "tracing",
  "tracing-subscriber",
 ]

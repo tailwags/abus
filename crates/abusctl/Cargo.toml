@@ -19,8 +19,12 @@ anyhow = { workspace = true }
 bytes = { workspace = true }
 futures-util = { workspace = true }
 sap = { workspace = true }
-tokio = { workspace = true, features = ["macros", "rt-multi-thread", "net", "io-util"] }
+tokio = { workspace = true, features = [
+  "macros",
+  "rt-multi-thread",
+  "net",
+  "io-util",
+] }
 tokio-stream = { workspace = true }
-tokio-util = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }

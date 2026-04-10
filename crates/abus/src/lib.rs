@@ -7,7 +7,6 @@ mod object_path;
 pub(crate) mod tracing;
 pub(crate) mod utils;
 
-pub use codec::MessageCodec;
 pub use connection::Connection;
 pub use endianness::Endianness;
 pub use message::*;
