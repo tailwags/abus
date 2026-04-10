@@ -9,6 +9,12 @@ use crate::Message;
 #[derive(Debug)]
 pub struct MessageCodec {}
 
+impl Default for MessageCodec {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl MessageCodec {
     pub const fn new() -> Self {
         Self {}

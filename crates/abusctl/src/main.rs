@@ -32,7 +32,7 @@ async fn main() -> Result<()> {
 
     let mut command: Option<String> = None;
 
-    while let Some(arg) = parser.forward()? {
+    if let Some(arg) = parser.forward()? {
         match arg {
             Argument::Short('h') | Argument::Long("help") => {
                 usage(&name);
@@ -40,7 +40,6 @@ async fn main() -> Result<()> {
             }
             Argument::Value(val) => {
                 command = Some(val.to_string());
-                break;
             }
             Argument::Short(c) => bail!("Unknown flag: -{c}"),
             Argument::Long(s) => bail!("Unknown flag: --{s}"),
@@ -95,9 +94,9 @@ async fn cmd_hello() -> Result<()> {
     framed.send(hello).await?;
     info!("Hello sent, waiting for reply");
 
-    while let Some(msg) = framed.try_next().await? {
+    if let Some(msg) = framed.try_next().await? {
         info!(?msg, "received message");
-        break;
+        // break;
     }
 
     Ok(())
