@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 //! D-Bus object path types.
 //!
 //! Provides an owned [`ObjectPath`] and a borrowed [`ObjectPathRef`], mirroring

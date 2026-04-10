@@ -5,8 +5,9 @@ edition.workspace = true
 description = "Dbus implementation"
 authors.workspace = true
 repository.workspace = true
+license = "Apache-2.0"
 readme = "README.md"
-include = ["src/**/*.rs", "README.md", "../../LICENSE"]
+include = ["src/**/*.rs", "README.md", "../../LICENSE-APACHE"]
 
 [features]
 tracing = ["dep:tracing"]

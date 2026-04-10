@@ -5,8 +5,9 @@ edition.workspace = true
 description = "Command-line tool for inspecting and interacting with D-Bus"
 authors.workspace = true
 repository.workspace = true
+license = "EUPL-1.2"
 readme = "README.md"
-include = ["src/**/*.rs", "README.md", "../../LICENSE"]
+include = ["src/**/*.rs", "README.md", "../../LICENSE-EUPL"]
 
 [[bin]]
 name = "abusctl"

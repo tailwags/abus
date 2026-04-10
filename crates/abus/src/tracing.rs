@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 #[cfg(feature = "tracing")]
 #[allow(unused_imports)]
 pub use ::tracing::{debug, error, info, trace, warn};

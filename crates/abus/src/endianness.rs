@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 use bytes::{Buf, BufMut};
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
