@@ -4,6 +4,7 @@ use std::num::NonZero;
 use bitflags::bitflags;
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 use tokio::io;
+use tokio_util::codec::{Decoder, Encoder};
 
 use crate::{Endianness, ObjectPath};
 
@@ -175,32 +176,8 @@ impl TryFrom<u8> for HeaderField {
 }
 
 impl Message {
-    /// Peeks at `src` to determine the total byte length of the next complete message frame.
-    ///
-    /// Returns `Ok(None)` if fewer than 16 bytes are available (need more data),
-    /// `Err` for detectably invalid content (bad endianness byte, frame exceeds 128 MiB),
-    /// or `Ok(Some(n))` with the total frame size.
-    pub(crate) fn peek_frame_size(src: &[u8]) -> io::Result<Option<usize>> {
-        if src.len() < 16 {
-            return Ok(None);
-        }
-        let endianness = Endianness::try_from(src[0])
-            .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "invalid endianness byte"))?;
-        let body_length = endianness.u32_from_bytes([src[4], src[5], src[6], src[7]]) as usize;
-        let array_len = endianness.u32_from_bytes([src[12], src[13], src[14], src[15]]) as usize;
-        let header_size = (16 + array_len + 7) & !7;
-        let total_size = header_size + body_length;
-        if total_size > 134_217_728 {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                "message exceeds 128 MiB limit",
-            ));
-        }
-        Ok(Some(total_size))
-    }
-
     pub fn decode(src: &mut BytesMut) -> io::Result<Self> {
-        let total_size = Message::peek_frame_size(src)?
+        let total_size = peek_frame_size(src)?
             .ok_or_else(|| io::Error::new(io::ErrorKind::UnexpectedEof, "incomplete header"))?;
         if src.len() < total_size {
             return Err(io::Error::new(
@@ -350,7 +327,7 @@ impl Message {
         })
     }
 
-    pub(crate) fn encode(self, dst: &mut BytesMut) -> io::Result<()> {
+    pub fn encode(self, dst: &mut BytesMut) -> io::Result<()> {
         let Message { header, body } = self;
 
         let Header {
@@ -574,4 +551,79 @@ fn encode_u32_field(dst: &mut BytesMut, field: HeaderField, val: u32, endianness
     dst.put_u8(b'u');
     dst.put_u8(0); // null byte to end signature
     endianness.put_u32(dst, val);
+}
+
+/// Peeks at `src` to determine the total byte length of the next complete message frame.
+///
+/// Returns `Ok(None)` if fewer than 16 bytes are available (need more data),
+/// `Err` for detectably invalid content (bad endianness byte, frame exceeds 128 MiB),
+/// or `Ok(Some(n))` with the total frame size.
+fn peek_frame_size(src: &[u8]) -> io::Result<Option<usize>> {
+    if src.len() < 16 {
+        return Ok(None);
+    }
+    let endianness = Endianness::try_from(src[0])
+        .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "invalid endianness byte"))?;
+    let body_length = endianness.u32_from_bytes([src[4], src[5], src[6], src[7]]) as usize;
+    let array_len = endianness.u32_from_bytes([src[12], src[13], src[14], src[15]]) as usize;
+    let header_size = (16 + array_len + 7) & !7;
+    let total_size = header_size + body_length;
+    if total_size > 134_217_728 {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "message exceeds 128 MiB limit",
+        ));
+    }
+    Ok(Some(total_size))
+}
+
+#[derive(Debug)]
+pub(crate) struct MessageCodec {}
+
+impl Default for MessageCodec {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl MessageCodec {
+    pub const fn new() -> Self {
+        Self {}
+    }
+}
+
+impl Decoder for MessageCodec {
+    type Item = Message;
+
+    type Error = io::Error;
+
+    fn decode(&mut self, src: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
+        let total_size = match peek_frame_size(src)? {
+            None => {
+                src.reserve(16);
+                return Ok(None);
+            }
+            Some(n) => n,
+        };
+
+        // Make sure we have the whole body
+        if src.len() < total_size {
+            src.reserve(total_size - src.len());
+            return Ok(None);
+        }
+
+        // We have the full body here, split off so we remove this frame and are free to consume
+        // NOTE: split_to here is important, it guarantess that we don't leave garbage in the buffer
+        let mut src = src.split_to(total_size);
+
+        Message::decode(&mut src).map(Some)
+    }
+}
+
+impl Encoder<Message> for MessageCodec {
+    type Error = io::Error;
+
+    fn encode(&mut self, msg: Message, dst: &mut BytesMut) -> Result<(), Self::Error> {
+        msg.encode(dst)
+    }
 }

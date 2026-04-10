@@ -2,8 +2,7 @@
 use std::fmt::Display;
 
 use crate::{
-    Message,
-    codec::MessageCodec,
+    Message, MessageCodec,
     tracing::{error, info},
 };
 use anchovy::{AnchovyStream, DBUS_SCM_RIGHTS};

@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: Apache-2.0
-mod codec;
 mod connection;
 mod endianness;
 pub(crate) mod message;
