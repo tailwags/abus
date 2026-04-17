@@ -1,8 +1,10 @@
 {
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
-    rust-overlay.url = "github:oxalica/rust-overlay";
-    rust-overlay.inputs.nixpkgs.follows = "nixpkgs";
+    rust-overlay = {
+      url = "github:oxalica/rust-overlay";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
   outputs =
@@ -31,8 +33,13 @@
               cargo-edit
               cargo-expand
               cargo-bloat
+              cargo-fuzz
+              reuse
               (rust-bin.stable.latest.default.override {
-                extensions = [ "rust-src" "rust-analyzer"];
+                extensions = [
+                  "rust-src"
+                  "rust-analyzer"
+                ];
               })
             ];
           };
