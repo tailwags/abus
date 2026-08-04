@@ -5,7 +5,7 @@ use crate::{
     Message, MessageCodec,
     tracing::{error, info},
 };
-use anchovy::{AnchovyStream, DBUS_SCM_RIGHTS};
+use anchovy::{AnchovyStream, DBUS_FD_LIMIT};
 use futures_util::{Sink, Stream};
 use pin_project_lite::pin_project;
 use rustix::process::getuid;
@@ -39,7 +39,7 @@ impl Display for State {
 pin_project! {
     pub struct Connection {
         #[pin]
-        stream: Framed<BufReader<AnchovyStream<DBUS_SCM_RIGHTS>>, MessageCodec>,
+        stream: Framed<BufReader<AnchovyStream<DBUS_FD_LIMIT>>, MessageCodec>,
         server_guid: String,
         unix_fd_passing: bool,
     }

@@ -11,7 +11,7 @@ repository = "https://github.com/tailwags/abus"
 
 [workspace.dependencies]
 abus = { path = "crates/abus", version = "0.0.3" }
-anchovy = "0.3.0"
+anchovy = "0.4.0"
 anyhow = "1.0.104"
 bitflags = "2.13.1"
 bytes = "1.12.1"

@@ -51,9 +51,9 @@ dependencies = [
 
 [[package]]
 name = "anchovy"
-version = "0.3.0"
+version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e04e030644e7cab7705be079979b2581714d989d76cffbbbd782362d6b0b77bc"
+checksum = "35f5cf0914ca9421894f0ed60fc66b8d61b589ab4a08ab354a67f9b37c013bd4"
 dependencies = [
  "rustix",
  "tokio",
