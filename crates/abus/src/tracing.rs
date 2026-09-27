@@ -1,34 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
+//! Tracing macros that forward to the `tracing` crate when the `tracing`
+//! feature is enabled, and expand to nothing otherwise, so call sites never
+//! need to be gated. Use them as `crate::tracing::{info, warn, ...}`.
+
 #[cfg(feature = "tracing")]
 #[allow(unused_imports)]
-pub use ::tracing::{debug, error, info, trace, warn};
+pub(crate) use ::tracing::{debug, error, info, trace, warn};
 
 #[cfg(not(feature = "tracing"))]
-mod disabled {
-    #[allow(unused_macros)]
-    macro_rules! error {
-        ($($t:tt)*) => {};
-    }
-    #[allow(unused_macros)]
-    macro_rules! _warn {
-        ($($t:tt)*) => {};
-    }
-    #[allow(unused_macros)]
-    macro_rules! info {
-        ($($t:tt)*) => {};
-    }
-    #[allow(unused_macros)]
-    macro_rules! debug {
-        ($($t:tt)*) => {};
-    }
-    #[allow(unused_macros)]
-    macro_rules! trace {
-        ($($t:tt)*) => {};
-    }
-    pub(crate) use _warn as warn;
-    pub(crate) use {debug, error, info, trace};
+macro_rules! noop {
+    ($($t:tt)*) => {};
 }
-
 #[cfg(not(feature = "tracing"))]
 #[allow(unused_imports)]
-pub(crate) use disabled::{debug, error, info, trace, warn};
+pub(crate) use {noop as debug, noop as error, noop as info, noop as trace, noop as warn};
