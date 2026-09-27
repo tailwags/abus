@@ -51,11 +51,11 @@ software can opt into something better. This is experimental and a long way off.
 
 ## License
 
-`abus` is licensed under the [Apache-2.0 License](LICENSES/Apache-2.0.txt). `abusd` and
-`abusctl` are licensed under the [EUPL-1.2 License](LICENSES/EUPL-1.2.txt). For more
+`abus` is licensed under the [Apache-2.0 License](LICENSE-APACHE). `abusd` and
+`abusctl` are licensed under the [EUPL-1.2 License](LICENSE-EUPL). For more
 information, please see the respective license files.
 
 `docs/dbus-specification.md` is derived from the
 [D-Bus Specification](https://gitlab.freedesktop.org/dbus/dbus/-/blob/master/doc/dbus-specification.xml),
 copyright the D-Bus contributors, and is licensed under GPL-2.0-or-later. For
-more information, please see the [LICENSES/GPL-2.0-or-later.txt](LICENSES/GPL-2.0-or-later.txt) file.
+more information, please see the [docs/COPYING](docs/COPYING) file.

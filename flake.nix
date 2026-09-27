@@ -29,6 +29,19 @@
             reuse --root ${self} lint
             touch $out
           '';
+
+          # The license texts are copied next to what they cover so that GitHub
+          # and crates.io can find them; keep the copies identical to LICENSES/.
+          license-copies = pkgs.runCommand "abus-license-copies" { } ''
+            cd ${self}
+            cmp LICENSES/Apache-2.0.txt LICENSE-APACHE
+            cmp LICENSES/Apache-2.0.txt crates/abus/LICENSE
+            cmp LICENSES/EUPL-1.2.txt LICENSE-EUPL
+            cmp LICENSES/EUPL-1.2.txt crates/abusd/LICENSE
+            cmp LICENSES/EUPL-1.2.txt crates/abusctl/LICENSE
+            cmp LICENSES/GPL-2.0-or-later.txt docs/COPYING
+            touch $out
+          '';
         }
       );
 
