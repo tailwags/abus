@@ -27,9 +27,9 @@ you are not manually assembling wire bytes.
 
 ```toml
 [dependencies]
-abus = "0.0.2"
+abus = "0.0.3"
 ```
 
 ## License
 
-Licensed under the [Apache-2.0 License](../../LICENSE).
+Licensed under the [Apache-2.0 License](LICENSE).

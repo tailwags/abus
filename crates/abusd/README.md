@@ -9,4 +9,4 @@ that works with those should work with `abusd`.
 
 ## License
 
-Licensed under the [Apache-2.0 License](../../LICENSE).
+Licensed under the [EUPL-1.2 License](LICENSE).

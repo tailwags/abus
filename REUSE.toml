@@ -1,0 +1,19 @@
+version = 1
+
+# When several annotations match a file, the last one wins, so the repository
+# default comes first and the exceptions follow.
+
+[[annotations]]
+path = "**"
+SPDX-FileCopyrightText = "Matilde Morrone <contact@rosymati.com>"
+SPDX-License-Identifier = "Apache-2.0"
+
+[[annotations]]
+path = ["crates/abusd/**", "crates/abusctl/**"]
+SPDX-FileCopyrightText = "Matilde Morrone <contact@rosymati.com>"
+SPDX-License-Identifier = "EUPL-1.2"
+
+[[annotations]]
+path = "docs/dbus-specification.md"
+SPDX-FileCopyrightText = "The D-Bus contributors"
+SPDX-License-Identifier = "GPL-2.0-or-later"

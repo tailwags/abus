@@ -9,6 +9,7 @@
 
   outputs =
     {
+      self,
       nixpkgs,
       rust-overlay,
       ...
@@ -18,6 +19,19 @@
       eachSystem = lib.genAttrs lib.systems.flakeExposed;
     in
     {
+      checks = eachSystem (
+        system:
+        let
+          pkgs = nixpkgs.legacyPackages.${system};
+        in
+        {
+          reuse = pkgs.runCommand "abus-reuse-lint" { nativeBuildInputs = [ pkgs.reuse ]; } ''
+            reuse --root ${self} lint
+            touch $out
+          '';
+        }
+      );
+
       devShells = eachSystem (
         system:
         let

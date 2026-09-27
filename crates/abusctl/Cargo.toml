@@ -7,7 +7,7 @@ authors.workspace = true
 repository.workspace = true
 license = "EUPL-1.2"
 readme = "README.md"
-include = ["src/**/*.rs", "README.md", "../../LICENSE-EUPL"]
+include = ["src/**/*.rs", "README.md", "LICENSE"]
 
 [[bin]]
 name = "abusctl"

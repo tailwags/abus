@@ -7,7 +7,7 @@ authors.workspace = true
 repository.workspace = true
 license = "Apache-2.0"
 readme = "README.md"
-include = ["src/**/*.rs", "README.md", "../../LICENSE-APACHE"]
+include = ["src/**/*.rs", "README.md", "LICENSE"]
 
 [features]
 tracing = ["dep:tracing"]
