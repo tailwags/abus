@@ -348,6 +348,10 @@ impl Message {
             unix_fds,
         } = header;
 
+        // `dst` may already hold earlier messages (Framed encodes into a shared write
+        // buffer), so every offset and alignment below is relative to `start`.
+        let start = dst.len();
+
         dst.put_u8(endianness.into());
         dst.put_u8(message_type.into());
         dst.put_u8(flags.bits());
@@ -371,28 +375,56 @@ impl Message {
         endianness.put_u32(dst, 0);
 
         if let Some(path) = path {
-            encode_str_field(dst, HeaderField::Path, b'o', path.as_str(), endianness);
+            encode_str_field(
+                dst,
+                start,
+                HeaderField::Path,
+                b'o',
+                path.as_str(),
+                endianness,
+            );
         }
 
         if let Some(interface) = interface {
-            encode_str_field(dst, HeaderField::Interface, b's', &interface, endianness);
+            encode_str_field(
+                dst,
+                start,
+                HeaderField::Interface,
+                b's',
+                &interface,
+                endianness,
+            );
         }
 
         if let Some(member) = member {
-            encode_str_field(dst, HeaderField::Member, b's', &member, endianness);
+            encode_str_field(dst, start, HeaderField::Member, b's', &member, endianness);
         }
 
         if let Some(error_name) = error_name {
-            encode_str_field(dst, HeaderField::ErrorName, b's', &error_name, endianness);
+            encode_str_field(
+                dst,
+                start,
+                HeaderField::ErrorName,
+                b's',
+                &error_name,
+                endianness,
+            );
         }
 
         if let Some(reply_serial) = reply_serial {
-            encode_u32_field(dst, HeaderField::ReplySerial, reply_serial, endianness);
+            encode_u32_field(
+                dst,
+                start,
+                HeaderField::ReplySerial,
+                reply_serial,
+                endianness,
+            );
         }
 
         if let Some(destination) = destination {
             encode_str_field(
                 dst,
+                start,
                 HeaderField::Destination,
                 b's',
                 &destination,
@@ -401,22 +433,29 @@ impl Message {
         }
 
         if let Some(sender) = sender {
-            encode_str_field(dst, HeaderField::Sender, b's', &sender, endianness);
+            encode_str_field(dst, start, HeaderField::Sender, b's', &sender, endianness);
         }
 
         if let Some(signature) = signature {
-            encode_str_field(dst, HeaderField::Signature, b'g', &signature, endianness);
+            encode_str_field(
+                dst,
+                start,
+                HeaderField::Signature,
+                b'g',
+                &signature,
+                endianness,
+            );
         }
 
         if let Some(unix_fds) = unix_fds {
-            encode_u32_field(dst, HeaderField::UnixFds, unix_fds.get(), endianness);
+            encode_u32_field(dst, start, HeaderField::UnixFds, unix_fds.get(), endianness);
         }
 
-        let array_len = (dst.len() - 16) as u32;
-        dst[12..16].copy_from_slice(&endianness.u32_to_bytes(array_len));
+        let array_len = (dst.len() - start - 16) as u32;
+        dst[start + 12..start + 16].copy_from_slice(&endianness.u32_to_bytes(array_len));
 
         // From the spec: "The length of the header must be a multiple of 8, allowing the body to begin on an 8-byte boundary when storing the entire message in a single buffer."
-        align_to(dst, 8);
+        align_to(dst, start, 8);
 
         dst.extend_from_slice(&body);
 
@@ -509,14 +548,15 @@ fn read_sig_string(src: &mut BytesMut) -> io::Result<String> {
     String::from_utf8(bytes.to_vec()).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
 }
 
-/// Appends nul bytes to `dst` until its length is a multiple of `align`.
-/// Passing an already-aligned length does nothing. `align` must be a power of two
-/// (every alignment D-Bus uses is: 1, 2, 4, or 8).
+/// Appends nul bytes to `dst` until the length of the message starting at offset `start`
+/// is a multiple of `align`. Passing an already-aligned length does nothing. `align` must
+/// be a power of two (every alignment D-Bus uses is: 1, 2, 4, or 8).
 #[inline]
-fn align_to(dst: &mut BytesMut, align: usize) {
+fn align_to(dst: &mut BytesMut, start: usize, align: usize) {
     debug_assert!(align.is_power_of_two());
-    // round dst.len() up to the next multiple of align, subtract to get how many bytes we need
-    dst.put_bytes(0, ((dst.len() + align - 1) & !(align - 1)) - dst.len());
+    // round the message length up to the next multiple of align, subtract to get how many bytes we need
+    let len = dst.len() - start;
+    dst.put_bytes(0, ((len + align - 1) & !(align - 1)) - len);
 }
 
 /// Encodes a string-like header field (types `'s'`, `'o'`, or `'g'`) into `dst`.
@@ -524,12 +564,13 @@ fn align_to(dst: &mut BytesMut, align: usize) {
 /// all other string fields use `b's'`.
 fn encode_str_field(
     dst: &mut BytesMut,
+    start: usize,
     field: HeaderField,
     sig: u8,
     s: &str,
     endianness: Endianness,
 ) {
-    align_to(dst, 8);
+    align_to(dst, start, 8);
     dst.put_u8(field as u8);
     dst.put_u8(1); // signature len
     dst.put_u8(sig);
@@ -544,8 +585,14 @@ fn encode_str_field(
 }
 
 /// Encodes a u32 header field (type `'u'`) into `dst`.
-fn encode_u32_field(dst: &mut BytesMut, field: HeaderField, val: u32, endianness: Endianness) {
-    align_to(dst, 8);
+fn encode_u32_field(
+    dst: &mut BytesMut,
+    start: usize,
+    field: HeaderField,
+    val: u32,
+    endianness: Endianness,
+) {
+    align_to(dst, start, 8);
     dst.put_u8(field as u8);
     dst.put_u8(1); // signature len
     dst.put_u8(b'u');
