@@ -3,13 +3,14 @@ name = "abus-fuzz"
 version = "0.0.0"
 publish = false
 edition = "2024"
+license = "Apache-2.0"
 
 [package.metadata]
 cargo-fuzz = true
 
 [dependencies]
 libfuzzer-sys = "0.4"
-bytes = "1.11.1"
+bytes = "1.12.1"
 
 [dependencies.abus]
 path = "../crates/abus"
