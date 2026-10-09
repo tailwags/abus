@@ -17,14 +17,9 @@ path = "src/main.rs"
 abus = { workspace = true, features = ["tracing"] }
 anyhow = { workspace = true }
 bytes = { workspace = true }
-futures-util = { workspace = true }
+futures-util = { workspace = true, features = ["sink"] }
 sap = { workspace = true }
-tokio = { workspace = true, features = [
-  "macros",
-  "rt-multi-thread",
-  "net",
-  "io-util",
-] }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
 tokio-stream = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
