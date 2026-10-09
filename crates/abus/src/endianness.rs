@@ -8,6 +8,15 @@ pub enum Endianness {
     BigEndian = b'B',
 }
 
+impl Endianness {
+    /// The byte order of the target platform.
+    pub const NATIVE: Self = if cfg!(target_endian = "big") {
+        Endianness::BigEndian
+    } else {
+        Endianness::LittleEndian
+    };
+}
+
 impl From<Endianness> for u8 {
     fn from(value: Endianness) -> Self {
         value as u8
