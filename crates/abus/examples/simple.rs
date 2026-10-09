@@ -15,7 +15,7 @@ async fn main() -> Result<()> {
 
     dbg!(uuid);
 
-    let mut connection = Connection::new().await?;
+    let mut connection = Connection::system().await?;
 
     println!("Connected to server {}", connection.server_guid());
 

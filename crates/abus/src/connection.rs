@@ -1,9 +1,18 @@
 // SPDX-License-Identifier: Apache-2.0
-use std::fmt::Display;
+use std::{
+    env,
+    ffi::OsString,
+    fmt::Display,
+    os::unix::ffi::OsStringExt as _,
+    path::{Path, PathBuf},
+    pin::Pin,
+    task::{Context, Poll},
+};
 
 use crate::{
     Message, MessageCodec,
     tracing::{error, info},
+    utils::HexU32,
 };
 use anchovy::{AnchovyStream, DBUS_FD_LIMIT};
 use futures_core::Stream;
@@ -15,8 +24,6 @@ use tokio::{
     net::UnixStream,
 };
 use tokio_util::codec::Framed;
-
-use crate::utils::HexU32;
 
 enum State {
     #[allow(unused)]
@@ -46,17 +53,100 @@ pin_project! {
     }
 }
 
+/// Socket used when `DBUS_SYSTEM_BUS_ADDRESS` is unset. The spec names
+/// `/var/run/dbus/system_bus_socket`, which is a symlink to this on modern
+/// systems.
+const SYSTEM_BUS_PATH: &str = "/run/dbus/system_bus_socket";
+
+/// Reads a D-Bus address from an environment variable. Unset, empty or
+/// non-UTF-8 variables yield `None`.
+fn env_address(var: &str) -> Option<String> {
+    env::var(var).ok().filter(|address| !address.is_empty())
+}
+
+/// Returns the socket path of the first `unix:path=` entry of a D-Bus address
+/// (see "Server Addresses" in the spec). Other transports and `abstract=`
+/// sockets are not supported.
+fn unix_path(address: &str) -> io::Result<PathBuf> {
+    let value = address
+        .split(';')
+        .filter_map(|entry| entry.strip_prefix("unix:"))
+        .find_map(|params| params.split(',').find_map(|p| p.strip_prefix("path=")))
+        .ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::Unsupported,
+                format!("dbus address {address:?} has no unix:path= entry"),
+            )
+        })?;
+
+    Ok(OsString::from_vec(unescape(value)?).into())
+}
+
+/// Undoes the `%XX` escaping of address values. Like libdbus, bytes that
+/// should have been escaped are accepted as-is.
+fn unescape(value: &str) -> io::Result<Vec<u8>> {
+    let mut out = Vec::with_capacity(value.len());
+    let mut bytes = value.bytes();
+
+    while let Some(b) = bytes.next() {
+        if b != b'%' {
+            out.push(b);
+            continue;
+        }
+
+        let mut hex = || char::from(bytes.next()?).to_digit(16);
+        let escaped = hex()
+            .zip(hex())
+            .map(|(hi, lo)| (hi << 4 | lo) as u8)
+            .ok_or_else(|| {
+                io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    format!("invalid percent escape in dbus address value {value:?}"),
+                )
+            })?;
+        out.push(escaped);
+    }
+
+    Ok(out)
+}
+
 impl Connection {
-    pub async fn new() -> io::Result<Self> {
-        let stream = UnixStream::connect("/run/dbus/system_bus_socket").await?;
+    /// Connects to the system bus at `DBUS_SYSTEM_BUS_ADDRESS`, or at the
+    /// well-known system bus socket if the variable is unset.
+    pub async fn system() -> io::Result<Self> {
+        match env_address("DBUS_SYSTEM_BUS_ADDRESS") {
+            Some(address) => Self::connect(unix_path(&address)?).await,
+            None => Self::connect(SYSTEM_BUS_PATH).await,
+        }
+    }
 
-        info!("Connected to dbus system socket");
+    /// Connects to the session bus at `DBUS_SESSION_BUS_ADDRESS`, falling back
+    /// to `$XDG_RUNTIME_DIR/bus` like libdbus and sd-bus do.
+    pub async fn session() -> io::Result<Self> {
+        let path = match env_address("DBUS_SESSION_BUS_ADDRESS") {
+            Some(address) => unix_path(&address)?,
+            None => env::var_os("XDG_RUNTIME_DIR")
+                .filter(|dir| !dir.is_empty())
+                .map(|dir| PathBuf::from(dir).join("bus"))
+                .ok_or_else(|| {
+                    io::Error::new(
+                        io::ErrorKind::NotFound,
+                        "cannot locate the session bus: neither DBUS_SESSION_BUS_ADDRESS nor XDG_RUNTIME_DIR is set",
+                    )
+                })?,
+        };
 
-        let this = Self::authenticate(stream).await?;
+        Self::connect(path).await
+    }
 
-        // todo!()
+    /// Connects to the Unix socket at `path` and authenticates.
+    pub async fn connect(path: impl AsRef<Path>) -> io::Result<Self> {
+        let path = path.as_ref();
+        let stream = UnixStream::connect(path).await?;
 
-        Ok(this)
+        info!("Connected to dbus socket {}", path.display());
+
+        Self::authenticate(stream).await
     }
 
     async fn authenticate(stream: UnixStream) -> io::Result<Self> {
@@ -169,10 +259,7 @@ impl Connection {
 impl Stream for Connection {
     type Item = io::Result<Message>;
 
-    fn poll_next(
-        self: std::pin::Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<Option<Self::Item>> {
+    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         self.project().stream.poll_next(cx)
     }
 }
@@ -180,28 +267,19 @@ impl Stream for Connection {
 impl Sink<Message> for Connection {
     type Error = io::Error;
 
-    fn poll_ready(
-        self: std::pin::Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<Result<(), Self::Error>> {
+    fn poll_ready(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         self.project().stream.poll_ready(cx)
     }
 
-    fn start_send(self: std::pin::Pin<&mut Self>, msg: Message) -> Result<(), Self::Error> {
+    fn start_send(self: Pin<&mut Self>, msg: Message) -> Result<(), Self::Error> {
         self.project().stream.start_send(msg)
     }
 
-    fn poll_flush(
-        self: std::pin::Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<Result<(), Self::Error>> {
+    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         self.project().stream.poll_flush(cx)
     }
 
-    fn poll_close(
-        self: std::pin::Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<Result<(), Self::Error>> {
+    fn poll_close(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         self.project().stream.poll_close(cx)
     }
 }
