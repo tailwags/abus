@@ -42,29 +42,33 @@ impl fmt::Display for ObjectPathError {
 impl std::error::Error for ObjectPathError {}
 
 fn validate(s: &str) -> Result<(), ObjectPathError> {
-    let bytes = s.as_bytes();
-
-    if bytes.is_empty() || bytes[0] != b'/' {
+    let Some((b'/', rest)) = s.as_bytes().split_first() else {
         return Err(ObjectPathError::MissingLeadingSlash);
-    }
+    };
 
     // Root path is the only valid single-'/' path.
-    if bytes == b"/" {
+    if rest.is_empty() {
         return Ok(());
     }
 
-    // Skip the leading slash; split('/') catches trailing slashes and double slashes
-    // as empty elements.
-    for element in s[1..].split('/') {
-        if element.is_empty() {
-            return Err(ObjectPathError::EmptyElement);
-        }
-        if !element
-            .bytes()
-            .all(|b| b.is_ascii_alphanumeric() || b == b'_')
-        {
+    // Single pass over the bytes after the leading slash (this runs on every received
+    // message). An element is empty when a '/' directly follows another '/', or ends the path.
+    let mut after_slash = true;
+    for &b in rest {
+        if b == b'/' {
+            if after_slash {
+                return Err(ObjectPathError::EmptyElement);
+            }
+            after_slash = true;
+        } else if b.is_ascii_alphanumeric() || b == b'_' {
+            after_slash = false;
+        } else {
             return Err(ObjectPathError::InvalidChar);
         }
+    }
+
+    if after_slash {
+        return Err(ObjectPathError::EmptyElement);
     }
 
     Ok(())
@@ -185,11 +189,11 @@ impl ObjectPathRef {
     /// # Safety
     ///
     /// The caller must guarantee that `s` is a valid D-Bus object path.
-    pub unsafe fn new_unchecked(s: &str) -> &Self {
+    pub const unsafe fn new_unchecked(s: &str) -> &Self {
         unsafe { &*(s as *const str as *const ObjectPathRef) }
     }
 
-    pub fn as_str(&self) -> &str {
+    pub const fn as_str(&self) -> &str {
         &self.0
     }
 
@@ -200,7 +204,7 @@ impl ObjectPathRef {
     /// by a `/`. The root path `/` is a prefix of every path.
     ///
     /// ```
-    /// # use abus::object_path::ObjectPathRef;
+    /// # use abus::ObjectPathRef;
     /// let ns = ObjectPathRef::new("/com/example/foo").unwrap();
     /// let child = ObjectPathRef::new("/com/example/foo/bar").unwrap();
     /// let sibling = ObjectPathRef::new("/com/example/foobar").unwrap();

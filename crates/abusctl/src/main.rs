@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: EUPL-1.2
 use std::num::NonZero;
 
-use abus::{Connection, Endianness, Flags, Header, Message, MessageType, ObjectPath, Uuid};
+use abus::{Connection, Header, Message, MessageType, ObjectPathRef, Uuid};
 use anyhow::{Result, bail};
 use bytes::Bytes;
 use futures_util::SinkExt;
@@ -65,24 +65,15 @@ async fn cmd_hello() -> Result<()> {
     let mut connection = Connection::new().await?;
     info!(server_guid = %connection.server_guid(), "connected");
 
+    let mut header = Header::new(MessageType::MethodCall, const { NonZero::new(1).unwrap() });
+    header
+        .set_path(ObjectPathRef::new("/org/freedesktop/DBus")?)
+        .set_interface("org.freedesktop.DBus")
+        .set_member("Hello")
+        .set_destination("org.freedesktop.DBus");
+
     let hello = Message {
-        header: Header {
-            endianness: Endianness::LittleEndian,
-            message_type: MessageType::MethodCall,
-            flags: Flags::empty(),
-            version: 1,
-            body_length: 0,
-            serial: const { NonZero::new(1).unwrap() },
-            path: Some(ObjectPath::new("/org/freedesktop/DBus".to_owned()).unwrap()),
-            interface: Some("org.freedesktop.DBus".to_owned()),
-            member: Some("Hello".to_owned()),
-            error_name: None,
-            reply_serial: None,
-            destination: Some("org.freedesktop.DBus".to_owned()),
-            sender: None,
-            signature: None,
-            unix_fds: None,
-        },
+        header,
         body: Bytes::new(),
     };
 
@@ -90,7 +81,7 @@ async fn cmd_hello() -> Result<()> {
     info!("Hello sent, waiting for reply");
 
     if let Some(msg) = connection.try_next().await? {
-        info!(?msg, "received message");
+        info!("received message {msg:#?}");
         // break;
     }
 

@@ -9,5 +9,5 @@ pub(crate) mod utils;
 pub use connection::Connection;
 pub use endianness::Endianness;
 pub use message::*;
-pub use object_path::ObjectPath;
+pub use object_path::{ObjectPath, ObjectPathRef};
 pub use utils::Uuid;
