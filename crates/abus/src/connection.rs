@@ -6,7 +6,8 @@ use crate::{
     tracing::{error, info},
 };
 use anchovy::{AnchovyStream, DBUS_FD_LIMIT};
-use futures_util::{Sink, Stream};
+use futures_core::Stream;
+use futures_sink::Sink;
 use pin_project_lite::pin_project;
 use rustix::process::getuid;
 use tokio::{
@@ -51,7 +52,11 @@ impl Connection {
 
         info!("Connected to dbus system socket");
 
-        Self::authenticate(stream).await
+        let this = Self::authenticate(stream).await?;
+
+        // todo!()
+
+        Ok(this)
     }
 
     async fn authenticate(stream: UnixStream) -> io::Result<Self> {
@@ -156,7 +161,7 @@ impl Connection {
         &self.server_guid
     }
 
-    pub fn unix_fd_passing(&self) -> bool {
+    pub const fn unix_fd_passing(&self) -> bool {
         self.unix_fd_passing
     }
 }
