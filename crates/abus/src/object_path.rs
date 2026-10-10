@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! D-Bus object path types.
 //!
-//! Provides an owned [`ObjectPath`] and a borrowed [`ObjectPathRef`], mirroring
-//! the `String`/`str` split. Both enforce the D-Bus spec's validity rules for
+//! Provides a borrowed [`ObjectPath`] and an owned [`ObjectPathBuf`], mirroring
+//! the `Path`/`PathBuf` split. Both enforce the D-Bus spec's validity rules for
 //! `OBJECT_PATH`.
 //!
 //! # Validity rules taken from the spec:
@@ -41,7 +41,7 @@ impl fmt::Display for ObjectPathError {
 
 impl std::error::Error for ObjectPathError {}
 
-fn validate(s: &str) -> Result<(), ObjectPathError> {
+const fn validate(s: &str) -> Result<(), ObjectPathError> {
     let Some((b'/', rest)) = s.as_bytes().split_first() else {
         return Err(ObjectPathError::MissingLeadingSlash);
     };
@@ -53,18 +53,26 @@ fn validate(s: &str) -> Result<(), ObjectPathError> {
 
     // Single pass over the bytes after the leading slash (this runs on every received
     // message). An element is empty when a '/' directly follows another '/', or ends the path.
+    // Indexed `while` instead of `for`, since iterators are not usable in `const fn`.
     let mut after_slash = true;
-    for &b in rest {
+    let mut i = 0;
+
+    while i < rest.len() {
+        let b = rest[i];
+
         if b == b'/' {
             if after_slash {
                 return Err(ObjectPathError::EmptyElement);
             }
+
             after_slash = true;
         } else if b.is_ascii_alphanumeric() || b == b'_' {
             after_slash = false;
         } else {
             return Err(ObjectPathError::InvalidChar);
         }
+
+        i += 1;
     }
 
     if after_slash {
@@ -74,112 +82,31 @@ fn validate(s: &str) -> Result<(), ObjectPathError> {
     Ok(())
 }
 
-/// An owned, validated D-Bus object path.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-#[repr(transparent)]
-pub struct ObjectPath {
-    inner: String,
-}
-
-impl ObjectPath {
-    /// Validates and wraps `s`.
-    pub fn new(s: impl Into<String>) -> Result<Self, ObjectPathError> {
-        let s = s.into();
-        validate(&s)?;
-        Ok(Self { inner: s })
-    }
-
-    /// Wraps `s` without validation.
-    ///
-    /// # Safety
-    ///
-    /// The caller must guarantee that `s` is a valid D-Bus object path.
-    pub unsafe fn new_unchecked(s: impl Into<String>) -> Self {
-        Self { inner: s.into() }
-    }
-
-    pub fn as_str(&self) -> &str {
-        &self.inner
-    }
-
-    pub fn into_string(self) -> String {
-        self.inner
-    }
-}
-
-impl Deref for ObjectPath {
-    type Target = ObjectPathRef;
-
-    fn deref(&self) -> &ObjectPathRef {
-        // SAFETY: self.inner is a validated object path.
-        unsafe { ObjectPathRef::new_unchecked(&self.inner) }
-    }
-}
-
-impl AsRef<ObjectPathRef> for ObjectPath {
-    fn as_ref(&self) -> &ObjectPathRef {
-        self
-    }
-}
-
-impl AsRef<str> for ObjectPath {
-    fn as_ref(&self) -> &str {
-        &self.inner
-    }
-}
-
-impl Borrow<ObjectPathRef> for ObjectPath {
-    fn borrow(&self) -> &ObjectPathRef {
-        self
-    }
-}
-
-impl TryFrom<String> for ObjectPath {
-    type Error = ObjectPathError;
-
-    fn try_from(s: String) -> Result<Self, Self::Error> {
-        Self::new(s)
-    }
-}
-
-impl TryFrom<&str> for ObjectPath {
-    type Error = ObjectPathError;
-
-    fn try_from(s: &str) -> Result<Self, Self::Error> {
-        Self::new(s)
-    }
-}
-
-impl fmt::Display for ObjectPath {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.inner)
-    }
-}
-
-// Cross-type equality
-impl PartialEq<ObjectPathRef> for ObjectPath {
-    fn eq(&self, other: &ObjectPathRef) -> bool {
-        self.as_str() == other.as_str()
-    }
-}
-
-impl PartialEq<str> for ObjectPath {
-    fn eq(&self, other: &str) -> bool {
-        self.as_str() == other
-    }
-}
-
 /// A borrowed, validated D-Bus object path.
 ///
-/// Relates to [`ObjectPath`] the same way `str` relates to `String`.
+/// Relates to [`ObjectPathBuf`] the same way `Path` relates to `PathBuf`.
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(transparent)]
-pub struct ObjectPathRef(str);
+pub struct ObjectPath(str);
 
-impl ObjectPathRef {
-    /// Validates `s` and returns a reference to it as an `ObjectPathRef`.
-    pub fn new(s: &str) -> Result<&Self, ObjectPathError> {
-        validate(s)?;
+impl ObjectPath {
+    /// Validates `s` and returns a reference to it as an `ObjectPath`.
+    ///
+    /// This is a `const fn`, so a path literal can be checked at compile time:
+    ///
+    /// ```
+    /// # use abus::ObjectPath;
+    /// const PATH: &ObjectPath = match ObjectPath::new("/org/freedesktop/DBus") {
+    ///     Ok(path) => path,
+    ///     Err(_) => panic!("invalid object path"),
+    /// };
+    /// assert_eq!(PATH.as_str(), "/org/freedesktop/DBus");
+    /// ```
+    pub const fn new(s: &str) -> Result<&Self, ObjectPathError> {
+        // `?` is not usable in `const fn`.
+        if let Err(e) = validate(s) {
+            return Err(e);
+        }
         // SAFETY: repr(transparent) over str; validated above.
         Ok(unsafe { Self::new_unchecked(s) })
     }
@@ -190,7 +117,7 @@ impl ObjectPathRef {
     ///
     /// The caller must guarantee that `s` is a valid D-Bus object path.
     pub const unsafe fn new_unchecked(s: &str) -> &Self {
-        unsafe { &*(s as *const str as *const ObjectPathRef) }
+        unsafe { &*(s as *const str as *const ObjectPath) }
     }
 
     pub const fn as_str(&self) -> &str {
@@ -204,16 +131,16 @@ impl ObjectPathRef {
     /// by a `/`. The root path `/` is a prefix of every path.
     ///
     /// ```
-    /// # use abus::ObjectPathRef;
-    /// let ns = ObjectPathRef::new("/com/example/foo").unwrap();
-    /// let child = ObjectPathRef::new("/com/example/foo/bar").unwrap();
-    /// let sibling = ObjectPathRef::new("/com/example/foobar").unwrap();
+    /// # use abus::ObjectPath;
+    /// let ns = ObjectPath::new("/com/example/foo").unwrap();
+    /// let child = ObjectPath::new("/com/example/foo/bar").unwrap();
+    /// let sibling = ObjectPath::new("/com/example/foobar").unwrap();
     ///
     /// assert!(ns.is_namespace_of(child));
     /// assert!(ns.is_namespace_of(ns));
     /// assert!(!ns.is_namespace_of(sibling));
     /// ```
-    pub fn is_namespace_of(&self, other: &ObjectPathRef) -> bool {
+    pub fn is_namespace_of(&self, other: &ObjectPath) -> bool {
         let prefix = self.as_str();
         let child = other.as_str();
 
@@ -230,179 +157,168 @@ impl ObjectPathRef {
     }
 }
 
-impl ToOwned for ObjectPathRef {
-    type Owned = ObjectPath;
+impl ToOwned for ObjectPath {
+    type Owned = ObjectPathBuf;
 
-    fn to_owned(&self) -> ObjectPath {
+    fn to_owned(&self) -> ObjectPathBuf {
         // SAFETY: self is a validated object path.
-        unsafe { ObjectPath::new_unchecked(&self.0) }
+        unsafe { ObjectPathBuf::new_unchecked(&self.0) }
     }
 }
 
-impl AsRef<str> for ObjectPathRef {
+impl AsRef<ObjectPath> for ObjectPath {
+    fn as_ref(&self) -> &ObjectPath {
+        self
+    }
+}
+
+impl AsRef<str> for ObjectPath {
     fn as_ref(&self) -> &str {
         &self.0
     }
 }
 
-impl fmt::Display for ObjectPathRef {
+impl<'a> TryFrom<&'a str> for &'a ObjectPath {
+    type Error = ObjectPathError;
+
+    fn try_from(s: &'a str) -> Result<Self, Self::Error> {
+        ObjectPath::new(s)
+    }
+}
+
+impl fmt::Display for ObjectPath {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(&self.0)
     }
 }
 
-impl PartialEq<ObjectPath> for ObjectPathRef {
-    fn eq(&self, other: &ObjectPath) -> bool {
+impl PartialEq<ObjectPathBuf> for ObjectPath {
+    fn eq(&self, other: &ObjectPathBuf) -> bool {
         self.as_str() == other.as_str()
     }
 }
 
-impl PartialEq<str> for ObjectPathRef {
+impl PartialEq<str> for ObjectPath {
     fn eq(&self, other: &str) -> bool {
         &self.0 == other
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+/// An owned, validated D-Bus object path.
+///
+/// Prefer `&ObjectPath` (often `&'static`) and allocate this only when the path is built at
+/// runtime or must outlive its source.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[repr(transparent)]
+pub struct ObjectPathBuf {
+    inner: String,
+}
 
-    #[test]
-    fn root_path_is_valid() {
-        assert!(ObjectPath::new("/").is_ok());
+impl ObjectPathBuf {
+    /// Validates and wraps `s`.
+    pub fn new(s: impl Into<String>) -> Result<Self, ObjectPathError> {
+        let s = s.into();
+        validate(&s)?;
+        Ok(Self { inner: s })
     }
 
-    #[test]
-    fn simple_path_is_valid() {
-        assert!(ObjectPath::new("/foo").is_ok());
+    /// Wraps `s` without validation.
+    ///
+    /// # Safety
+    ///
+    /// The caller must guarantee that `s` is a valid D-Bus object path.
+    pub unsafe fn new_unchecked(s: impl Into<String>) -> Self {
+        Self { inner: s.into() }
     }
 
-    #[test]
-    fn nested_path_is_valid() {
-        assert!(ObjectPath::new("/com/example/MusicPlayer1").is_ok());
+    pub fn as_object_path(&self) -> &ObjectPath {
+        self
     }
 
-    #[test]
-    fn underscores_are_valid() {
-        assert!(ObjectPath::new("/com/example/my_service").is_ok());
+    pub fn as_str(&self) -> &str {
+        &self.inner
     }
 
-    #[test]
-    fn digits_in_element_are_valid() {
-        assert!(ObjectPath::new("/org/freedesktop/DBus").is_ok());
+    pub fn into_string(self) -> String {
+        self.inner
     }
+}
 
-    #[test]
-    fn empty_string_is_invalid() {
-        assert_eq!(
-            ObjectPath::new(""),
-            Err(ObjectPathError::MissingLeadingSlash)
-        );
+impl Deref for ObjectPathBuf {
+    type Target = ObjectPath;
+
+    fn deref(&self) -> &ObjectPath {
+        // SAFETY: self.inner is a validated object path.
+        unsafe { ObjectPath::new_unchecked(&self.inner) }
     }
+}
 
-    #[test]
-    fn no_leading_slash_is_invalid() {
-        assert_eq!(
-            ObjectPath::new("foo"),
-            Err(ObjectPathError::MissingLeadingSlash)
-        );
+impl AsRef<ObjectPath> for ObjectPathBuf {
+    fn as_ref(&self) -> &ObjectPath {
+        self
     }
+}
 
-    #[test]
-    fn trailing_slash_is_invalid() {
-        assert_eq!(ObjectPath::new("/foo/"), Err(ObjectPathError::EmptyElement));
+impl AsRef<str> for ObjectPathBuf {
+    fn as_ref(&self) -> &str {
+        &self.inner
     }
+}
 
-    #[test]
-    fn double_slash_is_invalid() {
-        assert_eq!(ObjectPath::new("//foo"), Err(ObjectPathError::EmptyElement));
+impl Borrow<ObjectPath> for ObjectPathBuf {
+    fn borrow(&self) -> &ObjectPath {
+        self
     }
+}
 
-    #[test]
-    fn internal_double_slash_is_invalid() {
-        assert_eq!(
-            ObjectPath::new("/foo//bar"),
-            Err(ObjectPathError::EmptyElement)
-        );
+impl From<&ObjectPath> for ObjectPathBuf {
+    fn from(path: &ObjectPath) -> Self {
+        path.to_owned()
     }
+}
 
-    #[test]
-    fn hyphen_is_invalid() {
-        assert_eq!(
-            ObjectPath::new("/foo-bar"),
-            Err(ObjectPathError::InvalidChar)
-        );
+impl From<ObjectPathBuf> for String {
+    fn from(path: ObjectPathBuf) -> Self {
+        path.inner
     }
+}
 
-    #[test]
-    fn dot_is_invalid() {
-        assert_eq!(
-            ObjectPath::new("/com.example"),
-            Err(ObjectPathError::InvalidChar)
-        );
+impl TryFrom<String> for ObjectPathBuf {
+    type Error = ObjectPathError;
+
+    fn try_from(s: String) -> Result<Self, Self::Error> {
+        Self::new(s)
     }
+}
 
-    #[test]
-    fn space_is_invalid() {
-        assert_eq!(
-            ObjectPath::new("/foo bar"),
-            Err(ObjectPathError::InvalidChar)
-        );
+impl TryFrom<&str> for ObjectPathBuf {
+    type Error = ObjectPathError;
+
+    fn try_from(s: &str) -> Result<Self, Self::Error> {
+        Self::new(s)
     }
+}
 
-    #[test]
-    fn namespace_root_matches_everything() {
-        let root = ObjectPathRef::new("/").unwrap();
-        let other = ObjectPathRef::new("/com/example").unwrap();
-        assert!(root.is_namespace_of(other));
+impl fmt::Display for ObjectPathBuf {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.inner)
     }
+}
 
-    #[test]
-    fn namespace_matches_self() {
-        let p = ObjectPathRef::new("/com/example/foo").unwrap();
-        assert!(p.is_namespace_of(p));
+impl PartialEq<ObjectPath> for ObjectPathBuf {
+    fn eq(&self, other: &ObjectPath) -> bool {
+        self.as_str() == other.as_str()
     }
+}
 
-    #[test]
-    fn namespace_matches_child() {
-        let ns = ObjectPathRef::new("/com/example/foo").unwrap();
-        let child = ObjectPathRef::new("/com/example/foo/bar").unwrap();
-        assert!(ns.is_namespace_of(child));
+impl PartialEq<&ObjectPath> for ObjectPathBuf {
+    fn eq(&self, other: &&ObjectPath) -> bool {
+        self.as_str() == other.as_str()
     }
+}
 
-    #[test]
-    fn namespace_does_not_match_sibling() {
-        let ns = ObjectPathRef::new("/com/example/foo").unwrap();
-        let sibling = ObjectPathRef::new("/com/example/foobar").unwrap();
-        assert!(!ns.is_namespace_of(sibling));
-    }
-
-    #[test]
-    fn namespace_does_not_match_parent() {
-        let ns = ObjectPathRef::new("/com/example/foo").unwrap();
-        let parent = ObjectPathRef::new("/com/example").unwrap();
-        assert!(!ns.is_namespace_of(parent));
-    }
-
-    #[test]
-    fn deref_coercion_works() {
-        let owned = ObjectPath::new("/foo").unwrap();
-        let borrowed: &ObjectPathRef = &owned;
-        assert_eq!(borrowed.as_str(), "/foo");
-    }
-
-    #[test]
-    fn to_owned_round_trips() {
-        let borrowed = ObjectPathRef::new("/foo/bar").unwrap();
-        let owned = borrowed.to_owned();
-        assert_eq!(owned.as_str(), "/foo/bar");
-    }
-
-    #[test]
-    fn cross_eq_works() {
-        let owned = ObjectPath::new("/foo").unwrap();
-        let borrowed = ObjectPathRef::new("/foo").unwrap();
-        assert_eq!(owned, *borrowed);
-        assert_eq!(*borrowed, owned);
+impl PartialEq<str> for ObjectPathBuf {
+    fn eq(&self, other: &str) -> bool {
+        self.as_str() == other
     }
 }

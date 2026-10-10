@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: EUPL-1.2
 use std::num::NonZero;
 
-use abus::{Connection, Header, Message, MessageType, ObjectPathRef, Uuid};
+use abus::{Connection, Header, Message, MessageType, ObjectPath, Uuid};
 use anyhow::{Result, bail};
 use bytes::Bytes;
 use futures_util::SinkExt;
@@ -62,12 +62,12 @@ async fn cmd_hello() -> Result<()> {
     let uuid = Uuid::new()?;
     info!(?uuid, "generated UUID");
 
-    let mut connection = Connection::new().await?;
+    let mut connection = Connection::system().await?;
     info!(server_guid = %connection.server_guid(), "connected");
 
     let mut header = Header::new(MessageType::MethodCall, const { NonZero::new(1).unwrap() });
     header
-        .set_path(ObjectPathRef::new("/org/freedesktop/DBus")?)
+        .set_path(ObjectPath::new("/org/freedesktop/DBus")?)
         .set_interface("org.freedesktop.DBus")
         .set_member("Hello")
         .set_destination("org.freedesktop.DBus");

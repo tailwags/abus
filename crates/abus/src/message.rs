@@ -6,7 +6,16 @@ use bytes::{BufMut, Bytes, BytesMut};
 use tokio::io;
 use tokio_util::codec::{Decoder, Encoder};
 
-use crate::{Endianness, ObjectPathRef};
+use crate::{
+    Endianness, ObjectPath, Signature,
+    cursor::{Cursor, CursorError},
+    utils::align_up,
+};
+
+/// Messages larger than this, header and body included, must be rejected.
+const MAX_MESSAGE_LEN: u64 = 1 << 27;
+/// Arrays longer than this many bytes must be rejected. This bounds the header field array.
+const MAX_ARRAY_LEN: u32 = 1 << 26;
 
 #[derive(Debug)]
 pub struct Message {
@@ -259,11 +268,11 @@ impl Header {
     /// and the reference implementation of the bus daemon will disconnect any application that attempts to do so.
     ///
     /// This header field is controlled by the message sender.
-    pub fn path(&self) -> Option<&ObjectPathRef> {
+    pub fn path(&self) -> Option<&ObjectPath> {
         // SAFETY: the path span is only set from a validated object path, in `Message::decode`
         // or in `set_path`.
         self.get(self.path)
-            .map(|s| unsafe { ObjectPathRef::new_unchecked(s) })
+            .map(|s| unsafe { ObjectPath::new_unchecked(s) })
     }
 
     /// The interface to invoke a method call on, or that a signal is emitted from.
@@ -312,13 +321,15 @@ impl Header {
     /// If omitted, it is assumed to be the empty signature "" (i.e. the body must be 0-length).
     ///
     /// This header field is controlled by the message sender.
-    pub fn signature(&self) -> Option<&str> {
-        // FIXME: should be a parsed signature
+    pub fn signature(&self) -> Option<&Signature> {
+        // SAFETY: the signature span is only set from a validated signature, in
+        // `Message::decode` or in `set_signature`.
         self.get(self.signature)
+            .map(|s| unsafe { Signature::new_unchecked(s) })
     }
 
     /// Sets the [path](Self::path) field.
-    pub fn set_path(&mut self, path: &ObjectPathRef) -> &mut Self {
+    pub fn set_path(&mut self, path: &ObjectPath) -> &mut Self {
         self.path = Some(self.push(path.as_str()));
         self
     }
@@ -354,8 +365,8 @@ impl Header {
     }
 
     /// Sets the [signature](Self::signature) field.
-    pub fn set_signature(&mut self, signature: &str) -> &mut Self {
-        self.signature = Some(self.push(signature));
+    pub fn set_signature(&mut self, signature: &Signature) -> &mut Self {
+        self.signature = Some(self.push(signature.as_str()));
         self
     }
 }
@@ -440,33 +451,28 @@ impl Message {
         header.version = src[3];
         header.body_length = endianness.u32_from_bytes([src[4], src[5], src[6], src[7]]);
 
+        // `peek_frame_size` bounded the array length to 64 MiB, so none of this overflows.
         let array_len = endianness.u32_from_bytes([src[12], src[13], src[14], src[15]]) as usize;
         let array_end = 16 + array_len;
-        let header_size = (array_end + 7) & !7;
+        let header_size = align_up(array_end, 8);
 
         // `peek_frame_size` checked that the whole frame is present, so the field array is too.
         // The reader is bounded to the array, so no field can run into the padding or the body.
-        let mut reader = FieldReader {
-            buf: &src[..array_end],
-            pos: 16,
-            endianness,
-        };
+        let mut reader = Cursor::new(&src[..array_end], 16, endianness);
 
-        loop {
-            // Each field is STRUCT(BYTE, VARIANT), structs align to 8.
-            // Whatever is left after aligning is the array's trailing padding.
-            reader.pos = (reader.pos + 7) & !7;
-            if reader.pos >= array_end {
-                break;
-            }
+        while reader.pos() < array_end {
+            // Each field is STRUCT(BYTE, VARIANT), structs align to 8. The array length does
+            // not count padding after the last field, so the array cannot end inside padding.
+            reader.align(8)?;
 
             // After field_code we're at 8k+1. The variant sig is always
             // sig_len(1) + sig(1) + null(1) = 3 bytes, landing at 8k+4 (4-aligned).
             match HeaderField::try_from(reader.u8()?)? {
                 HeaderField::Path => {
-                    reader.variant_sig(b'o')?;
-                    let (span, s) = reader.string()?;
-                    ObjectPathRef::new(s)
+                    variant_sig(&mut reader, b'o')?;
+                    let s = reader.string()?;
+                    let span = span_of(&reader, s);
+                    ObjectPath::new(s)
                         .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
                     header.path = Some(span);
                 }
@@ -477,8 +483,9 @@ impl Message {
                 | HeaderField::ErrorName
                 | HeaderField::Destination
                 | HeaderField::Sender) => {
-                    reader.variant_sig(b's')?;
-                    let (span, _) = reader.string()?;
+                    variant_sig(&mut reader, b's')?;
+                    let s = reader.string()?;
+                    let span = span_of(&reader, s);
                     match field {
                         HeaderField::Interface => header.interface = Some(span),
                         HeaderField::Member => header.member = Some(span),
@@ -492,14 +499,16 @@ impl Message {
 
                 // SIGNATURE ('g'): u8 length prefix, not u32 like strings.
                 HeaderField::Signature => {
-                    reader.variant_sig(b'g')?;
-                    let (span, _) = reader.signature()?;
+                    variant_sig(&mut reader, b'g')?;
+                    let s = reader.signature()?;
+                    let span = span_of(&reader, s);
+                    Signature::new(s).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
                     header.signature = Some(span);
                 }
 
                 // REPLY_SERIAL (5) and UNIX_FDS (9) are both u32.
                 field @ (HeaderField::ReplySerial | HeaderField::UnixFds) => {
-                    reader.variant_sig(b'u')?;
+                    variant_sig(&mut reader, b'u')?;
                     let val = reader.u32()?;
                     match field {
                         HeaderField::ReplySerial => header.reply_serial = Some(val),
@@ -510,6 +519,11 @@ impl Message {
                 }
             }
         }
+
+        // The padding between the field array and the body must be zero too.
+        Cursor::new(&src[..header_size], array_end, endianness)
+            .align(8)
+            .map_err(|_| invalid_data("header padding is not zero"))?;
 
         Ok((header, header_size))
     }
@@ -612,7 +626,7 @@ impl Message {
                 start,
                 HeaderField::Signature,
                 b'g',
-                signature,
+                signature.as_str(),
                 endianness,
             );
         }
@@ -633,118 +647,50 @@ impl Message {
     }
 }
 
-/// Cursor over a message's header field array. Every read is bounds-checked against the end
-/// of the array, so malformed input produces an error instead of a panic or an over-read.
-///
-/// The methods are `#[inline(always)]` because LLVM otherwise sometimes leaves them
-/// out of line depending on the caller, which measured about 20 ns slower per message.
-struct FieldReader<'a> {
-    buf: &'a [u8],
-    pos: usize,
-    endianness: Endianness,
-}
-
-impl<'a> FieldReader<'a> {
-    #[inline(always)]
-    fn take(&mut self, n: usize) -> io::Result<&'a [u8]> {
-        let bytes = self
-            .pos
-            .checked_add(n)
-            .and_then(|end| self.buf.get(self.pos..end))
-            .ok_or_else(past_array_end)?;
-        self.pos += n;
-        Ok(bytes)
-    }
-
-    #[inline(always)]
-    fn array<const N: usize>(&mut self) -> io::Result<[u8; N]> {
-        let bytes = *self
-            .buf
-            .get(self.pos..)
-            .and_then(<[u8]>::first_chunk::<N>)
-            .ok_or_else(past_array_end)?;
-        self.pos += N;
-        Ok(bytes)
-    }
-
-    #[inline(always)]
-    fn u8(&mut self) -> io::Result<u8> {
-        let [b] = self.array()?;
-        Ok(b)
-    }
-
-    #[inline(always)]
-    fn u32(&mut self) -> io::Result<u32> {
-        let bytes = self.array()?;
-        Ok(self.endianness.u32_from_bytes(bytes))
-    }
-
-    /// Reads and validates the 3-byte variant type header: sig_len=1, `expected_sig`, null terminator.
-    #[inline(always)]
-    fn variant_sig(&mut self, expected_sig: u8) -> io::Result<()> {
-        let [len, sig, nul] = self.array()?;
-        if len != 1 {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                "expected variant signature length 1",
-            ));
-        }
-        if sig != expected_sig {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                "unexpected variant signature byte",
-            ));
-        }
-        if nul != 0 {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                "expected null terminator after signature",
-            ));
-        }
-        Ok(())
-    }
-
-    /// Reads a u32-length-prefixed string followed by a null terminator.
-    /// Used for D-Bus types `s` (STRING) and `o` (OBJECT_PATH).
-    #[inline(always)]
-    fn string(&mut self) -> io::Result<(Span, &'a str)> {
-        let len = self.u32()? as usize;
-        self.str_body(len)
-    }
-
-    /// Reads a u8-length-prefixed string followed by a null terminator.
-    /// Used for D-Bus type `g` (SIGNATURE).
-    #[inline(always)]
-    fn signature(&mut self) -> io::Result<(Span, &'a str)> {
-        let len = self.u8()? as usize;
-        self.str_body(len)
-    }
-
-    #[inline(always)]
-    fn str_body(&mut self, len: usize) -> io::Result<(Span, &'a str)> {
-        let start = self.pos;
-        let bytes = self.take(len)?;
-        if self.u8()? != 0 {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                "expected null terminator after string",
-            ));
-        }
-        let s = std::str::from_utf8(bytes)
-            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
-        // SAFETY: `take` succeeded, so `start + len <= self.buf.len()`. `buf` is part of a frame
-        // of at most 128 MiB (checked by `peek_frame_size`), well within what `Span` can hold.
-        let span = unsafe { Span::new_unchecked(start, len) };
-        Ok((span, s))
+/// Errors from reading the header field array. The cursor is bounded to the array, so running
+/// out of bytes means a field extends past it.
+impl From<CursorError> for io::Error {
+    #[cold]
+    fn from(e: CursorError) -> Self {
+        invalid_data(match e {
+            CursorError::UnexpectedEof => "header field extends past array boundary",
+            CursorError::NonZeroPadding => "header field padding is not zero",
+            CursorError::InvalidString => {
+                "header string is not UTF-8, contains a NUL, or is not NUL-terminated"
+            }
+        })
     }
 }
 
-#[inline]
-fn past_array_end() -> io::Error {
-    io::Error::new(
-        io::ErrorKind::InvalidData,
-        "header field extends past array boundary",
-    )
+#[cold]
+fn invalid_data(msg: &'static str) -> io::Error {
+    io::Error::new(io::ErrorKind::InvalidData, msg)
+}
+
+/// Reads and validates the 3-byte variant type header: sig_len=1, `expected_sig`, null terminator.
+#[inline(always)]
+fn variant_sig(reader: &mut Cursor<'_>, expected_sig: u8) -> io::Result<()> {
+    let [len, sig, nul] = reader.fixed()?;
+    if len != 1 {
+        return Err(invalid_data("expected variant signature length 1"));
+    }
+    if sig != expected_sig {
+        return Err(invalid_data("unexpected variant signature byte"));
+    }
+    if nul != 0 {
+        return Err(invalid_data("expected null terminator after signature"));
+    }
+    Ok(())
+}
+
+/// The span of `s`, a string the reader just read: it ends right before the NUL terminator
+/// that was consumed last.
+#[inline(always)]
+fn span_of(reader: &Cursor<'_>, s: &str) -> Span {
+    let start = reader.pos() - 1 - s.len();
+    // SAFETY: `start + s.len()` is within the frame, which `peek_frame_size` limited to
+    // 128 MiB, well within what `Span` can hold.
+    unsafe { Span::new_unchecked(start, s.len()) }
 }
 
 /// Appends nul bytes to `dst` until the length of the message starting at offset `start`
@@ -752,10 +698,8 @@ fn past_array_end() -> io::Error {
 /// be a power of two (every alignment D-Bus uses is: 1, 2, 4, or 8).
 #[inline]
 fn align_to(dst: &mut BytesMut, start: usize, align: usize) {
-    debug_assert!(align.is_power_of_two());
-    // round the message length up to the next multiple of align, subtract to get how many bytes we need
     let len = dst.len() - start;
-    dst.put_bytes(0, ((len + align - 1) & !(align - 1)) - len);
+    dst.put_bytes(0, align_up(len, align) - len);
 }
 
 /// Encodes a string-like header field (types `'s'`, `'o'`, or `'g'`) into `dst`.
@@ -802,25 +746,27 @@ fn encode_u32_field(
 /// Peeks at `src` to determine the total byte length of the next complete message frame.
 ///
 /// Returns `Ok(None)` if fewer than 16 bytes are available (need more data),
-/// `Err` for detectably invalid content (bad endianness byte, frame exceeds 128 MiB),
-/// or `Ok(Some(n))` with the total frame size.
+/// `Err` for detectably invalid content (bad endianness byte, header field array over 64 MiB,
+/// frame over 128 MiB), or `Ok(Some(n))` with the total frame size.
 fn peek_frame_size(src: &[u8]) -> io::Result<Option<usize>> {
-    if src.len() < 16 {
+    let Some(fixed) = src.first_chunk::<16>() else {
         return Ok(None);
+    };
+    let endianness =
+        Endianness::try_from(fixed[0]).map_err(|_| invalid_data("invalid endianness byte"))?;
+    let body_length = endianness.u32_from_bytes([fixed[4], fixed[5], fixed[6], fixed[7]]);
+    let array_len = endianness.u32_from_bytes([fixed[12], fixed[13], fixed[14], fixed[15]]);
+    if array_len > MAX_ARRAY_LEN {
+        return Err(invalid_data("header field array exceeds 64 MiB limit"));
     }
-    let endianness = Endianness::try_from(src[0])
-        .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "invalid endianness byte"))?;
-    let body_length = endianness.u32_from_bytes([src[4], src[5], src[6], src[7]]) as usize;
-    let array_len = endianness.u32_from_bytes([src[12], src[13], src[14], src[15]]) as usize;
-    let header_size = (16 + array_len + 7) & !7;
-    let total_size = header_size + body_length;
-    if total_size > 134_217_728 {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            "message exceeds 128 MiB limit",
-        ));
+    // In u64 so that nothing overflows, even with a 32-bit `usize`.
+    let header_size = (16 + u64::from(array_len)).next_multiple_of(8);
+    let total_size = header_size + u64::from(body_length);
+    if total_size > MAX_MESSAGE_LEN {
+        return Err(invalid_data("message exceeds 128 MiB limit"));
     }
-    Ok(Some(total_size))
+    // At most 128 MiB, so it fits.
+    Ok(Some(total_size as usize))
 }
 
 #[derive(Debug)]

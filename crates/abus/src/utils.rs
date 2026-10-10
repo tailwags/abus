@@ -100,3 +100,11 @@ impl Debug for Uuid {
         f.debug_tuple("Uuid").field(&self.as_str()).finish()
     }
 }
+
+/// Rounds `n` up to the next multiple of `align`, which must be a power of two (every alignment
+/// D-Bus uses is: 1, 2, 4 or 8).
+#[inline(always)]
+pub(crate) const fn align_up(n: usize, align: usize) -> usize {
+    debug_assert!(align.is_power_of_two());
+    (n + align - 1) & !(align - 1)
+}
