@@ -1,0 +1,18 @@
+[package]
+name = "abus-xml"
+version = "0.0.1"
+edition.workspace = true
+description = "D-Bus introspection XML parsing and code generation for abus"
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "abus-xml"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = { workspace = true }
+quick-xml = { workspace = true, features = ["serialize", "overlapped-lists"] }
+sap = { workspace = true }
+serde = { workspace = true, features = ["derive"] }

@@ -21,6 +21,7 @@ futures-util = { version = "0.3.34", default-features = false }
 getrandom = "0.4.3"
 itoa = "1.0.18"
 pin-project-lite = "0.2.17"
+quick-xml = "0.42.0"
 rustix = "1.1.5"
 sap = "0.2.0"
 serde = "1.0.229"
