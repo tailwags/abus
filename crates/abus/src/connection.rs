@@ -10,7 +10,7 @@ use std::{
 };
 
 use crate::{
-    Message, MessageCodec,
+    BUFFER_CAPACITY, Message, MessageCodec,
     tracing::{error, info},
     utils::HexU32,
 };
@@ -150,7 +150,7 @@ impl Connection {
     }
 
     async fn authenticate(stream: UnixStream) -> io::Result<Self> {
-        let mut stream = BufReader::new(AnchovyStream::new(stream)?);
+        let mut stream = BufReader::with_capacity(BUFFER_CAPACITY, AnchovyStream::new(stream)?);
 
         let uid = HexU32::new(getuid().as_raw());
 
@@ -241,7 +241,7 @@ impl Connection {
         }
 
         Ok(Self {
-            stream: Framed::new(stream, MessageCodec::new()),
+            stream: Framed::with_capacity(stream, MessageCodec::new(), BUFFER_CAPACITY),
             server_guid,
             unix_fd_passing,
         })

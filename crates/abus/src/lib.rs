@@ -18,6 +18,16 @@ pub use ser::Variant;
 pub use signature::{Signature, SignatureBuf, SignatureError};
 pub use utils::Uuid;
 
+/// Initial capacity of every connection buffer: the auth `BufReader`, `Framed`'s read and
+/// write buffers, and the read buffer `MessageCodec` starts over with after a large frame.
+///
+/// `MessageCodec` also copies frames up to this size out of the read buffer and decodes larger
+/// ones in place. Using the same value bounds the memory a retained message keeps alive to
+/// about twice its size: a larger frame cannot arrive whole in a fresh read buffer, so it gets
+/// an exactly sized buffer of its own (or, after the read buffer grew for a smaller frame, one
+/// at most about twice its size).
+pub(crate) const BUFFER_CAPACITY: usize = 8 * 1024;
+
 /// Builds a `&'static` [`Signature`] from a string literal, validated at compile time.
 ///
 /// ```

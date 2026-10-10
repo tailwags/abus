@@ -2,12 +2,12 @@
 use std::{fmt, num::NonZero};
 
 use bitflags::bitflags;
-use bytes::{BufMut, Bytes, BytesMut};
+use bytes::{Buf as _, BufMut, Bytes, BytesMut};
 use tokio::io;
 use tokio_util::codec::{Decoder, Encoder};
 
 use crate::{
-    Endianness, ObjectPath, Signature,
+    BUFFER_CAPACITY, Endianness, ObjectPath, Signature,
     cursor::{Cursor, CursorError},
     utils::align_up,
 };
@@ -26,8 +26,8 @@ pub struct Message {
 /// A message header.
 ///
 /// The string fields (path, interface, member, ...) are not stored as separate allocations:
-/// they are byte ranges into one shared buffer. For a decoded message that buffer is the raw
-/// header itself, split off the connection's read buffer, so decoding allocates nothing.
+/// they are byte ranges into one buffer. For a decoded message that buffer is the raw header
+/// itself, so decoding needs at most one allocation for all of them.
 /// Read them through the accessor methods and change them through the `set_*` methods.
 pub struct Header {
     /// Endianness flag. Both header and body are in this endianness.
@@ -394,6 +394,10 @@ impl fmt::Debug for Header {
 }
 
 impl Message {
+    /// Decodes the frame at the start of `src` and removes it from `src`.
+    ///
+    /// The message shares `src`'s allocation instead of copying it, so as long as the message
+    /// is alive, the whole allocation stays alive too.
     pub fn decode(src: &mut BytesMut) -> io::Result<Self> {
         let (mut header, header_size) = Self::parse(src)?;
 
@@ -406,13 +410,13 @@ impl Message {
         Ok(Message { header, body })
     }
 
-    /// Like [`decode`](Self::decode), for a buffer that holds exactly one frame. Splits once
-    /// instead of twice, which saves refcount operations on the shared read buffer.
-    pub(crate) fn decode_frame(mut frame: BytesMut) -> io::Result<Self> {
-        let (mut header, header_size) = Self::parse(&frame)?;
+    /// Like [`decode`](Self::decode), but copies the frame instead of sharing a buffer: the
+    /// header and the body each get an exactly sized allocation (none for an empty body).
+    fn decode_copied(frame: &[u8]) -> io::Result<Self> {
+        let (mut header, header_size) = Self::parse(frame)?;
 
-        let body = frame.split_off(header_size).freeze();
-        header.strings = frame;
+        header.strings = BytesMut::from(&frame[..header_size]);
+        let body = Bytes::copy_from_slice(&frame[header_size..]);
 
         Ok(Message { header, body })
     }
@@ -800,15 +804,39 @@ impl Decoder for MessageCodec {
 
         // Make sure we have the whole body
         if src.len() < total_size {
-            src.reserve(total_size - src.len());
+            if total_size > BUFFER_CAPACITY && src.capacity() != total_size {
+                // Everything in `src` is a prefix of this frame. Move it to an exactly sized
+                // buffer, so that reads stop at the end of the frame and the decoded message
+                // shares its allocation with nothing else.
+                let mut frame = BytesMut::with_capacity(total_size);
+                frame.extend_from_slice(src);
+                *src = frame;
+            } else {
+                src.reserve(total_size - src.len());
+            }
+
             return Ok(None);
         }
 
-        // We have the full body here, split off so we remove this frame and are free to consume
-        // NOTE: split_to here is important, it guarantess that we don't leave garbage in the buffer
-        let frame = src.split_to(total_size);
+        if total_size <= BUFFER_CAPACITY {
+            // Sharing the read buffer would let a retained message pin a whole chunk of it,
+            // and would force Framed to allocate a new chunk once this one is full. Copying
+            // keeps `src` uniquely owned, so `reserve` reuses it in place.
+            let msg = Message::decode_copied(&src[..total_size])?;
+            src.advance(total_size);
+            return Ok(Some(msg));
+        }
 
-        Message::decode_frame(frame).map(Some)
+        // A large frame is decoded without copying. It sits in a buffer sized for it (see
+        // above) or in a read buffer at most about twice its size. Reading continues in a fresh
+        // buffer: the old one is shared with the message now, and `reserve` would size its
+        // replacement after the large frame (up to 64 KiB).
+        let msg = Message::decode(src)?;
+        let mut fresh = BytesMut::with_capacity(BUFFER_CAPACITY.max(src.len()));
+        fresh.extend_from_slice(src);
+        *src = fresh;
+
+        Ok(Some(msg))
     }
 }
 
