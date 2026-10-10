@@ -1,10 +1,13 @@
 [package]
 name = "abusctl"
-version = "0.0.1"
+version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 description = "Command-line tool for inspecting and interacting with D-Bus"
 authors.workspace = true
 repository.workspace = true
+keywords.workspace = true
+categories = ["command-line-utilities", "os::unix-apis"]
 license = "EUPL-1.2"
 readme = "README.md"
 include = ["src/**/*.rs", "README.md", "LICENSE"]

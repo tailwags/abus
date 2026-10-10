@@ -71,7 +71,11 @@ pub struct Arg {
     #[serde(rename = "@type")]
     pub ty: String,
     /// Defaults to `in` for methods; always `out` (and usually omitted) for signals.
-    #[serde(rename = "@direction", default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "@direction",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
     pub direction: Option<Direction>,
     #[serde(rename = "annotation", default)]
     pub annotations: Vec<Annotation>,

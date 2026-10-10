@@ -1,13 +1,16 @@
 [package]
 name = "abus"
-version = "0.0.3"
+version.workspace = true
 edition.workspace = true
-description = "Dbus implementation"
+rust-version.workspace = true
+description = "A Tokio-native D-Bus implementation"
 authors.workspace = true
 repository.workspace = true
-license = "Apache-2.0"
+keywords.workspace = true
+categories.workspace = true
+license.workspace = true
 readme = "README.md"
-include = ["src/**/*.rs", "README.md", "LICENSE"]
+include = ["src/**/*.rs", "examples/**/*.rs", "README.md", "LICENSE"]
 
 [features]
 tracing = ["dep:tracing"]

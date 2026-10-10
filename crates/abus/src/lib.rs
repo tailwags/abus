@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
+//! A Tokio-native D-Bus implementation.
+
 mod connection;
 mod cursor;
 pub mod de;

@@ -36,6 +36,7 @@
             cd ${self}
             cmp LICENSES/Apache-2.0.txt LICENSE-APACHE
             cmp LICENSES/Apache-2.0.txt crates/abus/LICENSE
+            cmp LICENSES/Apache-2.0.txt crates/abus-xml/LICENSE
             cmp LICENSES/EUPL-1.2.txt LICENSE-EUPL
             cmp LICENSES/EUPL-1.2.txt crates/abusd/LICENSE
             cmp LICENSES/EUPL-1.2.txt crates/abusctl/LICENSE

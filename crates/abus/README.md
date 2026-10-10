@@ -1,6 +1,6 @@
 # abus
 
-A D-Bus implementation in Rust, built specifically for Tokio.
+A Tokio-native D-Bus implementation in Rust.
 
 Most of the existing Rust D-Bus work supports multiple async runtimes. That
 flexibility is useful if you need it, but the cost is real: a larger dependency
@@ -27,7 +27,7 @@ you are not manually assembling wire bytes.
 
 ```toml
 [dependencies]
-abus = "0.0.3"
+abus = "0.1.0"
 ```
 
 ## License

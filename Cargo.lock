@@ -4,7 +4,7 @@ version = 4
 
 [[package]]
 name = "abus"
-version = "0.0.3"
+version = "0.0.4"
 dependencies = [
  "anchovy",
  "anyhow",
@@ -28,7 +28,7 @@ dependencies = [
 
 [[package]]
 name = "abus-xml"
-version = "0.0.1"
+version = "0.0.4"
 dependencies = [
  "anyhow",
  "quick-xml",
@@ -38,7 +38,7 @@ dependencies = [
 
 [[package]]
 name = "abusctl"
-version = "0.0.1"
+version = "0.0.4"
 dependencies = [
  "abus",
  "anyhow",
@@ -53,7 +53,7 @@ dependencies = [
 
 [[package]]
 name = "abusd"
-version = "0.0.1"
+version = "0.0.4"
 dependencies = [
  "anyhow",
  "tokio",

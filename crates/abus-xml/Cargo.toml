@@ -1,11 +1,16 @@
 [package]
 name = "abus-xml"
-version = "0.0.1"
+version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 description = "D-Bus introspection XML parsing and code generation for abus"
 license.workspace = true
 authors.workspace = true
 repository.workspace = true
+keywords = ["dbus", "introspection", "xml", "codegen"]
+categories = ["parser-implementations", "development-tools::build-utils"]
+readme = "README.md"
+include = ["src/**/*.rs", "README.md", "LICENSE"]
 
 [[bin]]
 name = "abus-xml"

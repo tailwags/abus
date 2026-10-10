@@ -1,6 +1,6 @@
 # abus
 
-A D-Bus implementation in Rust, built specifically for Tokio.
+A Tokio-native D-Bus implementation in Rust.
 
 Most of the existing Rust D-Bus work supports multiple async runtimes. That
 flexibility is useful if you need it, but the cost is real: a larger dependency
@@ -51,7 +51,7 @@ software can opt into something better. This is experimental and a long way off.
 
 ## License
 
-`abus` is licensed under the [Apache-2.0 License](LICENSE-APACHE). `abusd` and
+`abus` and `abus-xml` are licensed under the [Apache-2.0 License](LICENSE-APACHE). `abusd` and
 `abusctl` are licensed under the [EUPL-1.2 License](LICENSE-EUPL). For more
 information, please see the respective license files.
 
