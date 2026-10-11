@@ -22,7 +22,6 @@ bytes = { workspace = true }
 futures-core = { workspace = true }
 futures-sink = { workspace = true }
 getrandom = { workspace = true }
-itoa = { workspace = true }
 pin-project-lite = { workspace = true }
 rustix = { workspace = true, features = ["process"] }
 serde_core = { workspace = true }

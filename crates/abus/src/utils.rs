@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+use core::fmt::NumBuffer;
 use std::fmt::{Debug, Display};
 
 #[inline]
@@ -19,8 +20,8 @@ pub struct HexU32 {
 
 impl HexU32 {
     pub fn new(val: u32) -> Self {
-        let mut itoa_buf = itoa::Buffer::new();
-        let dec = itoa_buf.format(val).as_bytes();
+        let mut buf = NumBuffer::new();
+        let dec = val.format_into(&mut buf).as_bytes();
 
         let mut buf = [0u8; 20];
         hex_encode(dec, &mut buf);

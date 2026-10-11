@@ -6,7 +6,7 @@ resolver = "3"
 [workspace.package]
 version = "0.0.4"
 edition = "2024"
-rust-version = "1.88"
+rust-version = "1.98"
 license = "Apache-2.0"
 authors = ["Matilde Morrone <contact@rosymati.com>"]
 repository = "https://github.com/tailwags/abus"
@@ -23,7 +23,6 @@ futures-core = "0.3.34"
 futures-sink = "0.3.34"
 futures-util = { version = "0.3.34", default-features = false }
 getrandom = "0.4.3"
-itoa = "1.0.18"
 pin-project-lite = "0.2.17"
 quick-xml = "0.42.0"
 rustix = "1.1.5"
